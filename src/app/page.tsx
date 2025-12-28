@@ -3,16 +3,21 @@
 import { useState } from "react";
 import UploadZone from "@/components/UploadZone";
 import AnalysisPanel from "@/components/AnalysisPanel";
+import AnalyzingOverlay from "@/components/AnalyzingOverlay";
 import { PaperAnalysis } from "@/lib/gemini";
 import { Atom } from "lucide-react";
 
 export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<PaperAnalysis | null>(null);
+  const [currentText, setCurrentText] = useState("");
+  const [currentHash, setCurrentHash] = useState("");
 
   const handleUpload = async (file: File) => {
     setIsAnalyzing(true);
     setAnalysis(null);
+    setCurrentText("");
+    setCurrentHash("");
 
     try {
       // 1. Upload & Extract Text
@@ -23,15 +28,25 @@ export default function Home() {
         method: "POST",
         body: formData,
       });
-      const { text } = await uploadRes.json();
+      const { text, hash, cachedAnalysis } = await uploadRes.json();
 
       if (!text) throw new Error("Failed to extract text");
+      
+      setCurrentText(text);
+      setCurrentHash(hash);
 
-      // 2. Analyze with Gemini
+      if (cachedAnalysis) {
+        console.log("Using Cached Analysis for:", hash);
+        setAnalysis(cachedAnalysis);
+        setIsAnalyzing(false);
+        return; // Skip new analysis
+      }
+
+      // 2. Analyze with Gemini (and save to cache using hash)
       const analyzeRes = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, hash, filename: file.name }),
       });
       
       const analysisData = await analyzeRes.json();
@@ -42,6 +57,32 @@ export default function Home() {
       alert("Something went wrong processing the paper.");
     } finally {
       setIsAnalyzing(false);
+    }
+  };
+
+  const handleReanalyze = async () => {
+    if (!currentText) return;
+    
+    // Force re-analysis by calling analyze API directly
+    if (!confirm("Are you sure you want to re-analyze? This will consume more credits.")) return;
+
+    setIsAnalyzing(true);
+    setAnalysis(null);
+
+    try {
+      const analyzeRes = await fetch("/api/analyze", {
+         method: "POST",
+         headers: { "Content-Type": "application/json" },
+         body: JSON.stringify({ text: currentText, hash: currentHash, filename: "reanalysis.pdf" }),
+       });
+       
+       const analysisData = await analyzeRes.json();
+       setAnalysis(analysisData);
+    } catch(error) {
+       console.error("Re-analysis failed:", error);
+       alert("Failed to re-analyze.");
+    } finally {
+       setIsAnalyzing(false);
     }
   };
 
@@ -77,11 +118,18 @@ export default function Home() {
       {/* Main Interaction Area */}
       <div className="w-full z-10 flex flex-col items-center gap-8 transition-all">
         {!analysis && (
-           <UploadZone onUpload={handleUpload} isAnalyzing={isAnalyzing} />
+           <div className="relative w-full max-w-2xl">
+              <UploadZone onUpload={handleUpload} isAnalyzing={isAnalyzing} />
+              <AnalyzingOverlay isAnalyzing={isAnalyzing} />
+           </div>
         )}
 
         {analysis && (
-          <AnalysisPanel analysis={analysis} onSimulate={handleSimulate} />
+          <AnalysisPanel 
+             analysis={analysis} 
+             onSimulate={handleSimulate} 
+             onReanalyze={handleReanalyze} 
+          />
         )}
       </div>
 
