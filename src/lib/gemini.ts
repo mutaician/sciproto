@@ -1,22 +1,53 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
+import { z } from "zod";
 
 const apiKey = process.env.GEMINI_API_KEY || "";
-const genAI = new GoogleGenerativeAI(apiKey);
+const genAI = new GoogleGenAI({ apiKey });
 
-// Model configuration - optimizing for long context and reasoning
-const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+// Define the schema using Zod specifically for Validation (PaperAnalysis type)
+const PaperAnalysisSchema = z.object({
+  title: z.string().describe("The title of the research paper"),
+  summary: z.string().describe("A brief executive summary of the paper (max 3 sentences)"),
+  key_claims: z.array(z.string()).describe("List of 3-5 key scientific claims made in the paper"),
+  simulation_possibilities: z.array(z.object({
+    title: z.string().describe("Title of the potential simulation"),
+    description: z.string().describe("Description of what the user would interact with"),
+    complexity: z.enum(["Low", "Medium", "High"]).describe("Estimated development complexity"),
+    variables: z.array(z.string()).describe("List of adjustable parameters")
+  })).describe("List of interactive simulations that could be built based on this paper")
+});
 
-export interface PaperAnalysis {
-  title: string;
-  summary: string;
-  key_claims: string[];
-  simulation_possibilities: Array<{
-    title: string;
-    description: string;
-    complexity: "Low" | "Medium" | "High";
-    variables: string[];
-  }>;
-}
+export type PaperAnalysis = z.infer<typeof PaperAnalysisSchema>;
+
+// Define the schema manually to ensure strict compatibility with Gemini API
+const responseSchema = {
+  type: "OBJECT",
+  properties: {
+    title: { type: "STRING" },
+    summary: { type: "STRING" },
+    key_claims: { 
+      type: "ARRAY", 
+      items: { type: "STRING" } 
+    },
+    simulation_possibilities: {
+      type: "ARRAY",
+      items: {
+        type: "OBJECT",
+        properties: {
+          title: { type: "STRING" },
+          description: { type: "STRING" },
+          complexity: { type: "STRING", enum: ["Low", "Medium", "High"] },
+          variables: { 
+            type: "ARRAY", 
+            items: { type: "STRING" } 
+          }
+        },
+        required: ["title", "description", "complexity", "variables"]
+      }
+    }
+  },
+  required: ["title", "summary", "key_claims", "simulation_possibilities"]
+};
 
 export async function analyzePaper(paperText: string): Promise<PaperAnalysis> {
   const prompt = `
@@ -26,36 +57,35 @@ export async function analyzePaper(paperText: string): Promise<PaperAnalysis> {
   Your goal is to identify the core scientific concepts that can be turned into an INTERACTIVE PROTOTYPE or SIMULATION.
   Focus on equations, algorithms, or systems that have adjustable parameters.
   
-  Return a valid JSON object with the following schema:
-  {
-    "title": "Paper Title",
-    "summary": "Brief executive summary (max 3 sentences)",
-    "key_claims": ["Claim 1", "Claim 2"],
-    "simulation_possibilities": [
-      {
-        "title": "Name of the simulation",
-        "description": "What will the user interact with? What happens when they change parameters?",
-        "complexity": "Low" | "Medium" | "High",
-        "variables": ["List of adjustable parameters, e.g., 'Learning Rate', 'Number of Layers', 'Voltage'"]
-      }
-    ]
-  }
-
   Paper Text:
-  ${paperText.slice(0, 100000)} // Truncate to avoid massive overload if text is huge, though Gemini can handle it.
+  ${paperText.slice(0, 30000)}
   `;
 
-  // We request JSON format.
-  const result = await model.generateContent({
-    contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { responseMimeType: "application/json" }
+  // Using gemini-3-flash-preview with a clean schema config.
+  const response = await genAI.models.generateContent({
+    model: "gemini-3-flash-preview",
+    contents: { role: "user", parts: [{ text: prompt }] },
+    config: {
+        responseMimeType: "application/json",
+        responseSchema: responseSchema
+    }
   });
 
-  const text = result.response.text();
-  return JSON.parse(text) as PaperAnalysis;
-}
+  const text = response.text || "{}";
+  try {
+      // Use standard JSON parse and the Zod schema for type validation only
+      let json = JSON.parse(text);
+      if (Array.isArray(json)) json = json[0]; 
+      
+      // Robustness: Ensure simulation_possibilities is an array
+      if (!Array.isArray(json.simulation_possibilities)) {
+          json.simulation_possibilities = [];
+      }
 
-export async function generatePrototypeCode(simulationPlan: any): Promise<string> {
-  // Logic to generate React code will go here
-  return "// Code generation placeholder";
+      return PaperAnalysisSchema.parse(json);
+  } catch (error) {
+      console.error("Failed to parse Gemini response:", error);
+      // console.log("Raw response:", text);
+      throw new Error("Failed to parse analysis results");
+  }
 }
