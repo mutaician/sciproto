@@ -1,66 +1,90 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+"use client";
+
+import { useState } from "react";
+import UploadZone from "@/components/UploadZone";
+import AnalysisPanel from "@/components/AnalysisPanel";
+import { PaperAnalysis } from "@/lib/gemini";
+import { Atom } from "lucide-react";
 
 export default function Home() {
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysis, setAnalysis] = useState<PaperAnalysis | null>(null);
+
+  const handleUpload = async (file: File) => {
+    setIsAnalyzing(true);
+    setAnalysis(null);
+
+    try {
+      // 1. Upload & Extract Text
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const uploadRes = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+      const { text } = await uploadRes.json();
+
+      if (!text) throw new Error("Failed to extract text");
+
+      // 2. Analyze with Gemini
+      const analyzeRes = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      
+      const analysisData = await analyzeRes.json();
+      setAnalysis(analysisData);
+
+    } catch (error) {
+      console.error("Pipeline failed:", error);
+      alert("Something went wrong processing the paper.");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleSimulate = (sim: any) => {
+    console.log("Simulating:", sim);
+    // TODO: Navigate to prototype page
+    alert(`Starting build for: ${sim.title}`);
+  };
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.tsx file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="min-h-screen flex flex-col items-center p-8 md:p-24 relative overflow-hidden">
+      
+      {/* Background Decor - Grid */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:24px_24px] pointer-events-none" />
+
+      {/* Header */}
+      <div className="z-10 text-center mb-12 space-y-4">
+        <div className="flex items-center justify-center gap-3 mb-6">
+          <div className="p-2 bg-blue-500/10 rounded-lg border border-blue-500/20 animate-pulse-slow">
+            <Atom className="w-8 h-8 text-blue-400" />
+          </div>
+          <h1 className="text-5xl font-bold tracking-tighter text-white">
+            Sci<span className="text-gradient">Proto</span>
+          </h1>
         </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+        <p className="text-lg text-gray-400 max-w-lg mx-auto leading-relaxed">
+          Transform static research papers into interactive prototypes.
+          <br />
+          Powered by <span className="text-white font-medium">Gemini 3</span>.
+        </p>
+      </div>
+
+      {/* Main Interaction Area */}
+      <div className="w-full z-10 flex flex-col items-center gap-8 transition-all">
+        {!analysis && (
+           <UploadZone onUpload={handleUpload} isAnalyzing={isAnalyzing} />
+        )}
+
+        {analysis && (
+          <AnalysisPanel analysis={analysis} onSimulate={handleSimulate} />
+        )}
+      </div>
+
+    </main>
   );
 }

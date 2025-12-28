@@ -1,27 +1,67 @@
+@import "tailwindcss";
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+  /* Core Colors - Scientific/Space Theme */
+  --background: #000000;
+  --foreground: #ffffff;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+  --primary: #3b82f6; /* Electric Blue */
+  --primary-glow: rgba(59, 130, 246, 0.5);
 
-html,
-body {
-  max-width: 100vw;
-  overflow-x: hidden;
+  --secondary: #8b5cf6; /* Violet */
+  --secondary-glow: rgba(139, 92, 246, 0.5);
+
+  --accent: #10b981; /* Emerald */
+
+  --surface: rgba(255, 255, 255, 0.05);
+  --surface-hover: rgba(255, 255, 255, 0.1);
+  --border: rgba(255, 255, 255, 0.1);
+
+  --glass: cubic-bezier(0.25, 0.76, 0.5, 0.98);
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  overflow-x: hidden;
+  background-image: radial-gradient(
+      circle at 50% 0%,
+      #1a1a2e 0%,
+      transparent 50%
+    ),
+    radial-gradient(circle at 100% 0%, #0f172a 0%, transparent 40%);
+  min-height: 100vh;
+}
+
+/* Utilities */
+.glass-panel {
+  background: rgba(20, 20, 25, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, #60a5fa 0%, #c084fc 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.animate-pulse-slow {
+  animation: pulse 4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 * {
@@ -33,10 +73,4 @@ body {
 a {
   color: inherit;
   text-decoration: none;
-}
-
-@media (prefers-color-scheme: dark) {
-  html {
-    color-scheme: dark;
-  }
 }
