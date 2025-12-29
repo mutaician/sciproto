@@ -49,8 +49,8 @@ export default function PrototypeRenderer({ code, onRenderStatus }: PrototypeRen
           <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
           <style>
-             html, body { margin: 0; padding: 0; height: 100vh; width: 100vw; overflow: hidden; background: transparent; }
-             #root { height: 100%; width: 100%; display: flex; flex-direction: column; }
+             html, body { margin: 0; padding: 0; width: 100vw; min-height: 100vh; overflow-x: hidden; overflow-y: auto; background: transparent; }
+             #root { width: 100%; min-height: 100vh; display: flex; flex-direction: column; }
              .recharts-responsive-container { min-height: 0 !important; flex: 1; }
           </style>
         </head>
