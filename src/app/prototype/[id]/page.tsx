@@ -25,13 +25,25 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
 
   // Initial Kickoff
   useEffect(() => {
+    // AbortController to cancel requests if component unmounts (Strict Mode / Navigation)
+    const controller = new AbortController();
+
     if (title && history.length === 0 && !hasStarted.current) {
       hasStarted.current = true;
-      startAgentLoop(`I need a React simulation for: ${title}. ${description}.`);
+      startAgentLoop(`Task: Create a prototype for "${title}".\nContext: ${description}`, undefined, controller.signal);
     }
+
+    return () => {
+      // Cleanup: Abort any flying requests when component unmounts
+      controller.abort();
+      // Note: We don't reset 'hasStarted' because we want to persist the "attempt" 
+      // unless we truly want to retry on every mount (which we don't for an expensive API call).
+    };
   }, [title, description]);
 
-  const startAgentLoop = async (userMessage?: string, functionResponse?: any) => {
+  const startAgentLoop = async (userMessage?: string, functionResponse?: any, signal?: AbortSignal) => {
+    if (signal?.aborted) return;
+
     setStatus("thinking");
     setAgentMessage(""); 
     
@@ -57,7 +69,8 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // Send the history we just constructed locally
+        // Attach the signal so we can kill this request if the user leaves/remounts
+        signal: signal,
         body: JSON.stringify({ 
           history: currentHistory, 
           message: userMessage, 
@@ -74,6 +87,11 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
 
       // Stream Loop
       while (!done) {
+        if (signal?.aborted) {
+            reader.cancel();
+            break;
+        }
+        
         const { value, done: doneReading } = await reader.read();
         done = doneReading;
         const chunkValue = decoder.decode(value, { stream: !done });
@@ -93,10 +111,6 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
                 const part = json.part;
                 const toolCall = part.functionCall;
                 
-                // Add Assistant turn to history
-                // We split text and functionCall parts as per Gemini API requirements structure if needed, 
-                // but usually the API sends them separate or we can construct one turn.
-                // For simplicity here, we append the turn.
                 setHistory(prev => [...prev, { 
                     role: "model", 
                     parts: accumulatedText ? [{ text: accumulatedText }, part] : [part]
@@ -112,7 +126,6 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
                      }
 
                      if (code) {
-                         // Basic cleanup only
                          code = code.replace(/^```[\w\s]*\n/, "").replace(/```$/, "");
                          setCurrentCode(code);
                      }
@@ -125,14 +138,18 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
       }
       
       // End of stream - Text only case
-      if (status !== "executing") {
+      if (status !== "executing" && !signal?.aborted) {
          setStatus("idle");
          if (accumulatedText) {
              setHistory(prev => [...prev, { role: "model", parts: [{ text: accumulatedText }] }]);
          }
       }
 
-    } catch (e) {
+    } catch (e: any) {
+      if (e.name === 'AbortError') {
+          console.log("Request aborted (component unmounted)");
+          return;
+      }
       console.error(e);
       setAgentMessage("Agent connection failed.");
       setStatus("idle");
@@ -140,10 +157,20 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
   };
 
   const handleRenderStatus = (status: 'success' | 'error', payload: any) => {
+    // We use a timeout to allow the UI to settle
     setTimeout(() => {
         if (status === 'success') {
-             startAgentLoop(undefined, { name: 'render_prototype', response: { success: true, message: "Rendered successfully." } });
+             // SUCCESS: Stop the loop. Do NOT call the agent again.
+             setStatus("idle");
+             setAgentMessage("Prototype Ready");
+             
+             // Update history locally to record the tool success, so context is correct if user chats later
+             setHistory(prev => [...prev, { 
+                  role: "tool", 
+                  parts: [{ functionResponse: { name: 'render_prototype', response: { success: true, message: "Rendered successfully." } } }] 
+             }]);
         } else {
+            // ERROR: Recursion is desired here (Self-Correction)
             setAgentMessage("Runtime Error. Retrying...");
             startAgentLoop(undefined, { name: 'render_prototype', response: { success: false, error: payload } });
         }
