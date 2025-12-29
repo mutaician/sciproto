@@ -9,6 +9,7 @@ interface AnalysisPanelProps {
   analysis: PaperAnalysis | null;
   onSimulate: (sim: PaperAnalysis["simulation_possibilities"][0]) => void;
   onReanalyze: () => void;
+  onBack: () => void;
 }
 
 const container = {
@@ -26,7 +27,7 @@ const item = {
   show: { opacity: 1, y: 0 }
 };
 
-export default function AnalysisPanel({ analysis, onSimulate, onReanalyze }: AnalysisPanelProps) {
+export default function AnalysisPanel({ analysis, onSimulate, onReanalyze, onBack }: AnalysisPanelProps) {
   if (!analysis) return null;
 
   return (
@@ -53,8 +54,15 @@ export default function AnalysisPanel({ analysis, onSimulate, onReanalyze }: Ana
               </p>
             </div>
             
-            {/* Quick Stats or Metrics */}
+             {/* Quick Stats or Metrics */}
             <div className="flex gap-4 items-center">
+              <button 
+                 onClick={onBack}
+                 className="px-4 py-2 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/20 transition-all text-sm text-gray-300 font-medium"
+              >
+                  ← Back
+              </button>
+              
               <button 
                  onClick={onReanalyze}
                  className="p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/20 transition-all group/refresh"

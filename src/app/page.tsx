@@ -1,18 +1,39 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import UploadZone from "@/components/UploadZone";
 import AnalysisPanel from "@/components/AnalysisPanel";
 import AnalyzingOverlay from "@/components/AnalyzingOverlay";
 import { PaperAnalysis } from "@/lib/gemini";
-import { Atom } from "lucide-react";
+import { Atom, ArrowRight } from "lucide-react";
 
 export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysis, setAnalysis] = useState<PaperAnalysis | null>(null);
   const [currentText, setCurrentText] = useState("");
   const [currentHash, setCurrentHash] = useState("");
+  const [papers, setPapers] = useState<any[]>([]);
+
+  useEffect(() => {
+    fetchPapers();
+  }, [analysis]); // Re-fetch when returning to home
+
+  const fetchPapers = async () => {
+      try {
+          const res = await fetch("/api/papers");
+          const data = await res.json();
+          if (data.papers) setPapers(data.papers);
+      } catch (e) {
+          console.error("Failed to fetch papers");
+      }
+  };
+
+  const loadPaper = (paper: any) => {
+      setAnalysis(JSON.parse(paper.analysis_json));
+      setCurrentText(paper.raw_text);
+      setCurrentHash(paper.hash);
+  };
 
   const handleUpload = async (file: File) => {
     setIsAnalyzing(true);
@@ -128,20 +149,58 @@ export default function Home() {
         </p>
       </div>
 
-      {/* Main Interaction Area */}
-      <div className="w-full z-10 flex flex-col items-center gap-8 transition-all">
+      <div className="w-full z-10 flex flex-col items-center gap-12 transition-all max-w-6xl">
         {!analysis && (
-           <div className="relative w-full max-w-2xl">
-              <UploadZone onUpload={handleUpload} isAnalyzing={isAnalyzing} />
-              <AnalyzingOverlay isAnalyzing={isAnalyzing} />
-           </div>
+            <>
+               <div className="relative w-full max-w-2xl">
+                  <UploadZone onUpload={handleUpload} isAnalyzing={isAnalyzing} />
+                  <AnalyzingOverlay isAnalyzing={isAnalyzing} />
+               </div>
+               
+               {/* Dashboard List */}
+               {papers.length > 0 && (
+                   <div className="w-full max-w-4xl space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
+                        <div className="flex items-center gap-4 border-b border-white/10 pb-4">
+                            <h2 className="text-2xl font-semibold text-white">Your Research Library</h2>
+                            <span className="px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 text-xs font-mono">{papers.length} Papers</span>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {papers.map((paper: any) => (
+                                <button 
+                                    key={paper.hash}
+                                    onClick={() => loadPaper(paper)}
+                                    className="group relative flex flex-col items-start gap-2 p-6 rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 hover:border-blue-500/30 transition-all text-left"
+                                >
+                                    <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <ArrowRight className="w-5 h-5 text-blue-400 -rotate-45 group-hover:rotate-0 transition-transform" />
+                                    </div>
+                                    
+                                    <h3 className="font-semibold text-lg text-gray-200 group-hover:text-white line-clamp-1 pr-8">
+                                        {JSON.parse(paper.analysis_json).title}
+                                    </h3>
+                                    <p className="text-sm text-gray-400 line-clamp-2">
+                                        {JSON.parse(paper.analysis_json).summary}
+                                    </p>
+                                    <div className="mt-2 flex items-center gap-2 text-xs text-gray-500 font-mono">
+                                        <span>{new Date(paper.created_at).toLocaleDateString()}</span>
+                                        <span>•</span>
+                                        <span>{paper.filename}</span>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                   </div>
+               )}
+            </>
         )}
 
         {analysis && (
           <AnalysisPanel 
              analysis={analysis} 
              onSimulate={handleSimulate} 
-             onReanalyze={handleReanalyze} 
+             onReanalyze={handleReanalyze}
+             onBack={() => setAnalysis(null)} 
           />
         )}
       </div>

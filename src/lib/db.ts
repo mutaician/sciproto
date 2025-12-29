@@ -35,3 +35,9 @@ export function saveAnalysis(hash: string, filename: string, raw_text: string, a
   };
   writeDb(db);
 }
+
+export function getAllAnalyses() {
+  const db = readDb();
+  // Return array sorted by newest first
+  return Object.values(db).sort((a: any, b: any) => b.created_at - a.created_at);
+}

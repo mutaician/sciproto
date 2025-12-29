@@ -48,7 +48,7 @@ export default function UploadZone({ onUpload, isAnalyzing }: UploadZoneProps) {
       <motion.div
         layout
         className={clsx(
-          "relative border-2 border-dashed rounded-xl p-12 text-center transition-all duration-300 backdrop-blur-sm",
+          "relative border-2 border-dashed rounded-xl p-12 text-center transition-all duration-300 backdrop-blur-sm group",
           isDragging
             ? "border-blue-500 bg-blue-500/10 scale-[1.02]"
             : "border-gray-700 hover:border-blue-400/50 hover:bg-white/5",
@@ -66,6 +66,27 @@ export default function UploadZone({ onUpload, isAnalyzing }: UploadZoneProps) {
           className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
         />
 
+        {/* Traveling Sparkle */}
+        {!isAnalyzing && (
+            <motion.div
+                className="absolute w-4 h-4 pointer-events-none"
+                animate={{
+                    top: ["0%", "0%", "100%", "100%", "0%"],
+                    left: ["0%", "100%", "100%", "0%", "0%"],
+                    opacity: [0, 1, 1, 1, 0] // Fade in/out at start/end to hide jump? or just loop
+                }}
+                transition={{
+                    duration: 4,
+                    ease: "linear",
+                    repeat: Infinity,
+                    times: [0, 0.25, 0.5, 0.75, 1] 
+                }}
+                style={{ marginLeft: -8, marginTop: -8 }} // Center on border
+            >
+                <Sparkles className="w-5 h-5 text-blue-400 drop-shadow-[0_0_8px_rgba(59,130,246,0.8)] fill-blue-400/50 animate-pulse" />
+            </motion.div>
+        )}
+
         <div className="flex flex-col items-center justify-center space-y-4">
           <div className="relative">
             <div className={clsx(
@@ -78,15 +99,6 @@ export default function UploadZone({ onUpload, isAnalyzing }: UploadZoneProps) {
                  <Upload className={clsx("w-8 h-8 transition-colors", isDragging ? "text-blue-400" : "text-gray-400")} />
               )}
             </div>
-            {!isAnalyzing && (
-              <motion.div 
-                className="absolute -top-1 -right-1"
-                animate={{ rotate: 360 }}
-                transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-              >
-                 <Sparkles className="w-4 h-4 text-yellow-400/70" />
-              </motion.div>
-            )}
           </div>
 
           <div className="space-y-2 z-0">

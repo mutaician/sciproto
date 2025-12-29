@@ -4,6 +4,31 @@ import { GoogleGenAI } from "@google/genai";
 const apiKey = process.env.GEMINI_API_KEY || "";
 const genAI = new GoogleGenAI({ apiKey });
 
+//// System instruction to guide the agent
+const systemInstruction = `You are an expert React Prototyper.
+Your goal is to create interactive, educational physics/scientific simulations using React.
+
+You have access to a tool called "render_prototype".
+WHEN you are asked to create a prototype:
+1.  Design a high-quality, interactive React component.
+2.  IMMEDIATELY call the 'render_prototype' tool with the code.
+
+DO NOT write the code in markdown first. Call the tool directly.
+You can provide a very brief summary of what you are building before the tool call, but keep it minimal.
+
+Technical Stack:
+- React 18 (Hooks)
+- Recharts 2.12
+- Tailwind CSS
+- Lucide React
+
+CRITICAL RULES:
+- NO LaTeX raw syntax (e.g. $E=mc^2$) in text nodes. It breaks React. Use plain text "E=mc^2" or unicode.
+- NO Percentage values in SVG path 'd' attributes.
+- ALWAYS use 'import' statements for dependencies. The environment is a native Browser Native ES Module environment with Import Maps.
+- DEFENSIVE CODING: Always check if arrays exist before mapping (e.g. \`data && data.map\`). Initialize state with valid defaults.
+`;
+
 // Tool definition schema
 const renderPrototypeTool: any = {
   functionDeclarations: [
@@ -24,27 +49,8 @@ const renderPrototypeTool: any = {
   ],
 };
 
-const systemInstruction = `
-You are an expert "Vibe Engineering" Agent for Scientific Prototypes.
-Your Goal: Create beautiful, interactive, and CORRECT scientific simulations using React.
 
-Work Style:
-1. **Iterative**: You don't just write code once. You wait for feedback.
-2. **Self-Correcting**: If the user or the tool reports an error (Runtime Error, Syntax Error), you MUST analyze it and IMMEDIATELY call 'render_prototype' again with the FIXED code. Do not ask for permission to fix bugs.
-3. **Visuals**: Use 'recharts' for data visualization. Use 'framer-motion' for slick animations. Use Tailwind for "glassmorphism" (bg-white/10, backdrop-blur).
 
-Technical Stack:
-- React 18 (Hooks)
-- Recharts 2.12 (ResponsiveContainer is mandatory for sizing)
-- Tailwind CSS (Standard)
-- Lucide React (Icons)
-
-CRITICAL RULES:
-- NO LaTeX raw syntax (e.g. $E=mc^2$) in text nodes. It breaks React. Use plain text "E=mc^2" or unicode.
-- NO Percentage values in SVG path 'd' attributes.
-- ALWAYS use 'import' statements for dependencies. The environment is a native Browser Native ES Module environment with Import Maps.
-- DEFENSIVE CODING: Always check if arrays exist before mapping (e.g. \`data && data.map\`). Initialize state with valid defaults.
-`;
 
 export async function POST(req: NextRequest) {
   try {
@@ -95,6 +101,7 @@ export async function POST(req: NextRequest) {
           for await (const chunk of streamSource) {
             let text = "";
             try {
+                // Determine text content
                 if (typeof (chunk as any).text === 'function') {
                     text = (chunk as any).text();
                 } else if (typeof (chunk as any).text === 'string') {
@@ -102,42 +109,42 @@ export async function POST(req: NextRequest) {
                 } else {
                     text = chunk.candidates?.[0]?.content?.parts?.[0]?.text || "";
                 }
+                // console.log("Server Stream Chunk Text:", text ? text.substring(0, 50) + "..." : "[No Text]");
             } catch (e) {
-                // Ignore text extraction errors (e.g. tool calls)
+                console.error("Server Text Extraction Error:", e);
             }
 
             if (text) {
+               // console.log("Enqueueing text to client:", text.length);
                controller.enqueue(encoder.encode(JSON.stringify({ type: "text", content: text }) + "\n"));
             }
             
             // Check for function calls
-            // In @google/genai, we usually check chunk.functionCalls() method or candidates
             const candidates = (chunk as any).candidates;
             const parts = candidates?.[0]?.content?.parts;
 
             if (parts) {
-                 // Filter for function calls
                  const toolParts = parts.filter((p: any) => p.functionCall);
                  if (toolParts.length > 0) {
-                     // Send the WHOLE part object to the client to preserve 'thought_signature' or other metadata
+                     console.log("Server Found Tool Call Part:", toolParts[0].functionCall.name);
                      const fullPart = toolParts[0];
                      controller.enqueue(encoder.encode(JSON.stringify({ type: "tool_call_part", part: fullPart }) + "\n"));
                  }
             } else {
-                 // Fallback for older SDK versions or simple chunks
-                let toolCalls;
-                if (typeof (chunk as any).functionCalls === 'function') {
-                    toolCalls = (chunk as any).functionCalls();
-                }
+                 let toolCalls;
+                 if (typeof (chunk as any).functionCalls === 'function') {
+                     toolCalls = (chunk as any).functionCalls();
+                 }
 
-                if (toolCalls && toolCalls.length > 0) {
-                    const call = toolCalls[0];
-                    // Wrap in a synthetic part if we only got the call
-                    const part = { functionCall: call };
-                    controller.enqueue(encoder.encode(JSON.stringify({ type: "tool_call_part", part: part }) + "\n"));
-                }
+                 if (toolCalls && toolCalls.length > 0) {
+                     console.log("Server Found Tool Call (Legacy):", toolCalls[0].name);
+                     const call = toolCalls[0];
+                     const part = { functionCall: call };
+                     controller.enqueue(encoder.encode(JSON.stringify({ type: "tool_call_part", part: part }) + "\n"));
+                 }
             }
           }
+          console.log("Server Stream Completed");
           controller.close();
         } catch (error) {
           controller.error(error);
