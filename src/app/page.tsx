@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import UploadZone from "@/components/UploadZone";
 import AnalysisPanel from "@/components/AnalysisPanel";
 import AnalyzingOverlay from "@/components/AnalyzingOverlay";
@@ -86,10 +87,22 @@ export default function Home() {
     }
   };
 
+  // Add router
+  const router = useRouter();
+
   const handleSimulate = (sim: any) => {
-    console.log("Simulating:", sim);
-    // TODO: Navigate to prototype page
-    alert(`Starting build for: ${sim.title}`);
+    // Generate a slug or ID for the prototype
+    const timestamp = Date.now();
+    const slug = sim.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const id = `${slug}-${timestamp}`;
+    
+    // Encode parameters
+    const params = new URLSearchParams({
+      title: sim.title,
+      description: sim.description
+    });
+    
+    router.push(`/prototype/${id}?${params.toString()}`);
   };
 
   return (

@@ -1,56 +1,58 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 
 const apiKey = process.env.GEMINI_API_KEY || "";
-const genAI = new GoogleGenerativeAI(apiKey);
-// Use the strong model for code gen
-const model = genAI.getGenerativeModel({ model: "gemini-3-flash-preview" });
+const genAI = new GoogleGenAI({ apiKey });
 
 export async function POST(req: NextRequest) {
   try {
-    const { simulationTitle, simulationDescription } = await req.json();
+    const { analysis, simulation } = await req.json();
 
     const prompt = `
-    You are a React Specialist and Scientific Visualization Expert.
-    Create a React Component named 'Simulation' that visualizes the following concept:
+    You are an expert React Developer and Scientific Visualization Engineer.
+    Your task is to create a SINGLE REUSABLE REACT COMPONENT that implements the following simulation:
+
+    Simulation Title: ${simulation.title}
+    Description: ${simulation.description}
+    Adjustable Variables: ${simulation.variables.join(", ")}
+    Key Claims Supported: ${analysis.key_claims.join("; ")}
+
+    REQUIREMENTS:
+    1.  Return ONLY the React Component code. NO markdown, NO code blocks, NO explainer text. Just the code.
+    2.  Use functional components with Hooks.
+    3.  Use 'recharts' for any plotting (LineChart, ScatterChart, etc.). 
+        - Assume 'recharts' acts as a global namespace or that you can use the object destructuring pattern: 
+        - 'const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } = Recharts;' if you need it, BUT better to assume global 'Recharts' object is available if running in browser script tag, OR just rely on standard imports if using a bundler. 
+        - SINCE THIS RUNS IN A SANDBOX WITH CDN: 
+        - DO NOT import recharts. Assume 'Recharts' is a global variable.
+        - Example: '<Recharts.LineChart ... >'
+    4.  Use Tailwind CSS for styling. The parent container has 'p-6 bg-white/5 rounded-xl border border-white/10'.
+    5.  Make it interactive. Add sliders/inputs for the variables.
+    6.  The component should be default export.
+
+    IMPORTANT:
+    The environment is a standalone Babel-transpiled script in the browser.
+    - React and ReactDOM are available as globals.
+    - Recharts is available as 'window.Recharts'.
+    - DO NOT use 'import' statements. Use 'const { useState, useEffect } = React;'
+    - Use 'const { LineChart, ... } = Recharts;' at the top.
     
-    Title: ${simulationTitle}
-    Description: ${simulationDescription}
-    
-    Requirements:
-    1. Use 'Recharts' for plotting if data needs to be shown (LineChart, AreaChart, etc.). 
-       The library is available as a global variable 'Recharts'.
-       Destructured available: LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer.
-    2. Use 'React' hooks (useState, useEffect) for state. Available globally.
-    3. The component MUST be named 'Simulation'.
-    4. Provide interactive controls (sliders, inputs) for parameters.
-    5. Style using Tailwind CSS classes.
-    6. Return ONLY the code for the component function and any helper functions.
-       DO NOT include imports.
-       DO NOT include 'export default'.
-       DO NOT include markdown backticks.
-    
-    Example Structure:
-    
-    const Simulation = () => {
-       const [val, setVal] = useState(0);
-       // ... logic
-       return (
-         <div className="p-4 bg-gray-900 rounded-lg text-white">
-            <h2 className="text-xl mb-4">${simulationTitle}</h2>
-            {/* Controls */}
-            {/* Charts */}
-         </div>
-       )
-    };
+    Start the code with:
+    'const Simulation = () => {'
+    End with:
+    'export default Simulation;'
     `;
 
-    const result = await model.generateContent(prompt);
-    let code = result.response.text();
+    const response = await genAI.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: { role: "user", parts: [{ text: prompt }] }
+    });
 
-    // Cleanup code
-    code = code.replace(/```jsx/g, "").replace(/```javascript/g, "").replace(/```/g, "");
+    let code = response.text || "";
     
+    // Cleanup markdown if present
+    code = code.replace(/```javascript/g, "").replace(/```jsx/g, "").replace(/```/g, "");
+
     return NextResponse.json({ code });
   } catch (error) {
     console.error("Code Gen Error:", error);

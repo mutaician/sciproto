@@ -1,134 +1,146 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
-import { motion } from "framer-motion";
-
-/**
- * !CRITICAL WARNING!
- * This component executes arbitrary code from the LLM. 
- * IN A PRODUCTION APP, THIS MUST BE SANDBOXED (e.g., iframe, Sandpack).
- * For this Hackathon Prototype, we are using a direct execution approach 
- * but with awareness of the risks.
- */
 
 interface PrototypeRendererProps {
   code: string;
+  onRenderStatus?: (status: 'success' | 'error', payload: any) => void;
 }
 
-export default function PrototypeRenderer({ code }: PrototypeRendererProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [runtimeError, setRuntimeError] = useState<string | null>(null);
+export default function PrototypeRenderer({ code, onRenderStatus }: PrototypeRendererProps) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!containerRef.current || !code) return;
+    if (!iframeRef.current || !code) return;
 
-    // Clear previous
-    containerRef.current.innerHTML = "";
-    setRuntimeError(null);
+    const iframe = iframeRef.current;
+    const doc = iframe.contentWindow?.document;
+    if (!doc) return;
 
-    try {
-      // 1. Prepare data for the evaluation scope
-      // We will wrap the code in a function that returns the component or mounts it
-      // Since we can't easily compile JSX in browser without Babel/swc-wasm (too heavy for this step),
-      // we will prompt Gemini to output raw HTML/JS or use a very simple unexpected regex to strip imports.
-      // 
-      // BETTER APPROACH for Hackathon:
-      // We assume Gemini returns a module that exports a default function.
-      // We'll use a Blob URL to import it dynamically? No, that requires no deps.
-      //
-      // ACTUAL APPROACH:
-      // We will inject the code into an iframe srcDoc. This is the standard way to handle this safely and easily.
-      
-      const iframe = document.createElement("iframe");
-      iframe.style.width = "100%";
-      iframe.style.height = "100%";
-      iframe.style.border = "none";
-      iframe.className = "w-full h-full"; // Tailwind classes won't apply inside check later
-      
-      // Construct the HTML for the iframe
-      const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <script src="https://cdn.tailwindcss.com"></script>
-            <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
-            <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
-            <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-            
-            <!-- Recharts for plotting -->
-            <script src="https://unpkg.com/recharts/umd/Recharts.js"></script>
-            
-            <style>
-              body { background: transparent; color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; overflow: hidden; font-family: sans-serif; }
-              #root { width: 100%; height: 100%; padding: 20px; }
-            </style>
-          </head>
-          <body>
-            <div id="root"></div>
-            <script type="text/babel">
-              const { useState, useEffect, useMemo, useRef } = React;
-              const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, AreaChart, Area, BarChart, Bar } = Recharts;
+    // Reset error
+    setError(null);
 
-              // Error Boundary
-              class ErrorBoundary extends React.Component {
-                constructor(props) {
-                  super(props);
-                  this.state = { hasError: false, error: null };
+    // 1. Setup the HTML Shell with Import Map and Babel
+    const html = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <script src="https://cdn.tailwindcss.com"></script>
+          
+          <!-- Import Map: Maps standard names to ESM CDNs -->
+          <script type="importmap">
+          {
+            "imports": {
+              "react": "https://esm.sh/react@18.2.0",
+              "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+              "recharts": "https://esm.sh/recharts@2.12.7?deps=react@18.2.0,react-dom@18.2.0",
+              "lucide-react": "https://esm.sh/lucide-react@0.368.0?deps=react@18.2.0,react-dom@18.2.0",
+              "framer-motion": "https://esm.sh/framer-motion@11.0.24?deps=react@18.2.0,react-dom@18.2.0",
+              "clsx": "https://esm.sh/clsx@2.1.0",
+              "tailwind-merge": "https://esm.sh/tailwind-merge@2.2.2"
+            }
+          }
+          </script>
+
+          <!-- Babel for client-side JSX compilation -->
+          <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+          <style>
+             html, body { margin: 0; padding: 0; height: 100vh; width: 100vw; overflow: hidden; background: transparent; }
+             #root { height: 100%; width: 100%; display: flex; flex-direction: column; }
+             .recharts-responsive-container { min-height: 0 !important; flex: 1; }
+          </style>
+        </head>
+        <body>
+          <div id="root"></div>
+          <script type="module">
+             import { createRoot } from 'react-dom/client';
+             import React from 'react';
+
+             // Error Handling
+             window.onerror = (msg, url, line) => {
+                 window.parent.postMessage({ type: 'RENDER_ERROR', message: msg + ' (Line ' + line + ')' }, '*');
+             };
+
+             // We will dynamically import the user code as a module
+             async function run() {
+                try {
+                   // 1. Get Code from Parent (injected via template literal below)
+                   const rawCode = \`${code.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`;
+                   
+                   // 2. Transpile JSX -> JS (preserving imports)
+                   // Babel standalone usage
+                   // We add 'typescript' preset to handle type annotations
+                   const output = Babel.transform(rawCode, {
+                     presets: [
+                        ['react', { runtime: 'classic' }],
+                        ['typescript', { isTSX: true, allExtensions: true }]
+                     ],
+                     filename: 'App.tsx',
+                   });
+                   
+                   const transpiledCode = output.code;
+
+                   // 3. Create a Blob URL for the module
+                   const blob = new Blob([transpiledCode], { type: 'text/javascript' });
+                   const url = URL.createObjectURL(blob);
+
+                   // 4. Dynamic Import
+                   const module = await import(url);
+                   
+                   // 5. Render
+                   const App = module.default;
+                   if (!App) throw new Error("No default export found in component.");
+
+                   const root = createRoot(document.getElementById('root'));
+                   root.render(React.createElement(App));
+                   
+                   window.parent.postMessage({ type: 'RENDER_SUCCESS' }, '*');
+
+                } catch (e) {
+                   console.error(e);
+                   window.parent.postMessage({ type: 'RENDER_ERROR', message: e.message }, '*');
                 }
-                static getDerivedStateFromError(error) {
-                  return { hasError: true, error };
-                }
-                render() {
-                  if (this.state.hasError) {
-                    return <div className="text-red-500 p-4 bg-red-900/20 rounded">Runtime Error: {this.state.error.message}</div>;
-                  }
-                  return this.props.children;
-                }
-              }
+             }
 
-              // The Generated Code
-              ${code}
+             run();
+          </script>
+        </body>
+      </html>
+    `;
 
-              // Mount
-              const root = ReactDOM.createRoot(document.getElementById('root'));
-              // We assume the generated code defines a component named 'App' or 'Simulation'
-              // Or we ask the model to call 'render(<App />)' itself, but easier if we do it.
-              
-              // Try to find the component
-              const TargetComponent = (typeof Simulation !== 'undefined') ? Simulation : 
-                                    (typeof App !== 'undefined') ? App : 
-                                    (typeof Prototype !== 'undefined') ? Prototype : null;
+    doc.open();
+    doc.write(html);
+    doc.close();
 
-              if (TargetComponent) {
-                root.render(
-                  <ErrorBoundary>
-                    <TargetComponent />
-                  </ErrorBoundary>
-                );
-              } else {
-                root.render(<div className="text-yellow-500">Could not find component 'Simulation', 'App', or 'Prototype' to render.</div>);
-              }
-            </script>
-          </body>
-        </html>
-      `;
+    // Event Listener setup
+    const messageHandler = (e: MessageEvent) => {
+        if (e.data?.type === 'RENDER_ERROR') {
+            setError(e.data.message);
+            onRenderStatus?.('error', e.data.message);
+        } else if (e.data?.type === 'RENDER_SUCCESS') {
+            onRenderStatus?.('success', {});
+        }
+    };
+    window.addEventListener('message', messageHandler);
+    return () => window.removeEventListener('message', messageHandler);
 
-      iframe.srcdoc = htmlContent;
-      containerRef.current.appendChild(iframe);
-
-    } catch (e: any) {
-      setRuntimeError(e.message);
-    }
   }, [code]);
 
   return (
-    <div className="w-full h-full min-h-[600px] bg-black/20 border border-white/10 rounded-xl overflow-hidden relative">
-      <div ref={containerRef} className="w-full h-full" />
-      {runtimeError && (
-        <div className="absolute top-4 left-4 right-4 bg-red-900/90 text-white p-4 rounded border border-red-500 z-50">
-           {runtimeError}
-        </div>
-      )}
+    <div className="absolute inset-0 w-full h-full bg-black/20">
+       <iframe ref={iframeRef} className="w-full h-full border-none" />
+       {error && (
+         <div className="absolute bottom-4 left-4 right-4 bg-red-900/90 text-white p-4 rounded border border-red-500 z-50 font-mono text-sm shadow-xl">
+            <div className="font-bold mb-1 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-red-500"/> Runtime Error
+            </div>
+            {error}
+         </div>
+       )}
     </div>
   );
 }
