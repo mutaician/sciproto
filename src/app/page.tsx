@@ -120,7 +120,8 @@ export default function Home() {
     // Encode parameters
     const params = new URLSearchParams({
       title: sim.title,
-      description: sim.description
+      description: sim.description,
+      hash: currentHash // Pass hash lookup
     });
     
     router.push(`/prototype/${id}?${params.toString()}`);
