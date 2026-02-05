@@ -6,7 +6,8 @@ import UploadZone from "@/components/UploadZone";
 import AnalysisPanel from "@/components/AnalysisPanel";
 import AnalyzingOverlay from "@/components/AnalyzingOverlay";
 import { PaperAnalysis } from "@/lib/gemini";
-import { Atom, ArrowRight } from "lucide-react";
+import { Atom, ArrowRight, Compass } from "lucide-react";
+import Link from "next/link";
 
 export default function Home() {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -148,6 +149,16 @@ export default function Home() {
           <br />
           Powered by <span className="text-white font-medium">Gemini 3</span>.
         </p>
+        
+        {/* Discover Button */}
+        <Link 
+          href="/discover"
+          className="inline-flex items-center gap-2 mt-4 px-5 py-2.5 rounded-xl bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 hover:border-purple-500/30 transition-all font-medium"
+        >
+          <Compass className="w-5 h-5" />
+          Discover Papers on arXiv
+          <ArrowRight className="w-4 h-4" />
+        </Link>
       </div>
 
       <div className="w-full z-10 flex flex-col items-center gap-12 transition-all max-w-6xl">
