@@ -3,7 +3,8 @@
 import { useEffect, useState, useRef, use, useCallback, memo } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Send, Bot, User, Loader2 } from "lucide-react";
+import { ArrowLeft, Send, Bot, User, Loader2, PanelLeftClose, PanelLeft, Save } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import PrototypeRenderer from "@/components/PrototypeRenderer";
 
 // ============================================================================
@@ -17,19 +18,30 @@ interface Message {
   isStreaming?: boolean;
 }
 
+type ChatWidth = "narrow" | "normal" | "wide";
+
 // ============================================================================
-// CHAT PANEL - Isolated component, changes here don't affect prototype
+// CHAT PANEL - Isolated component with markdown support
 // ============================================================================
 
 interface ChatPanelProps {
   messages: Message[];
   isLoading: boolean;
   onSendMessage: (content: string) => void;
+  width: ChatWidth;
+  onWidthChange: (width: ChatWidth) => void;
 }
 
-const ChatPanel = memo(function ChatPanel({ messages, isLoading, onSendMessage }: ChatPanelProps) {
+const ChatPanel = memo(function ChatPanel({ messages, isLoading, onSendMessage, width, onWidthChange }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Width classes
+  const widthClasses = {
+    narrow: "w-72",
+    normal: "w-96",
+    wide: "w-[600px]"
+  };
 
   // Auto-scroll when messages change
   useEffect(() => {
@@ -43,13 +55,35 @@ const ChatPanel = memo(function ChatPanel({ messages, isLoading, onSendMessage }
     setInput("");
   };
 
+  const cycleWidth = () => {
+    const order: ChatWidth[] = ["narrow", "normal", "wide"];
+    const currentIdx = order.indexOf(width);
+    const nextIdx = (currentIdx + 1) % order.length;
+    onWidthChange(order[nextIdx]);
+  };
+
   // Filter out initial context messages for display
   const visibleMessages = messages.filter(m => 
     !(m.role === "user" && (m.content.includes("PAPER CONTENT:") || m.content.startsWith("Create an interactive prototype")))
   );
 
   return (
-    <div className="w-80 border-r border-white/10 flex flex-col bg-black/40 shrink-0">
+    <div className={`${widthClasses[width]} border-r border-white/10 flex flex-col bg-black/40 shrink-0 transition-all duration-300`}>
+      {/* Header with width toggle */}
+      <div className="p-3 border-b border-white/10 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Bot className="w-4 h-4 text-blue-400" />
+          <span className="text-xs font-medium text-gray-300">Research Assistant</span>
+        </div>
+        <button
+          onClick={cycleWidth}
+          className="p-1.5 hover:bg-white/10 rounded-lg transition-colors text-gray-400 hover:text-white"
+          title={`Current: ${width}. Click to change.`}
+        >
+          {width === "wide" ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
+        </button>
+      </div>
+
       {/* Messages */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {visibleMessages.length === 0 && !isLoading && (
@@ -66,14 +100,20 @@ const ChatPanel = memo(function ChatPanel({ messages, isLoading, onSendMessage }
             }`}>
               {msg.role === "user" ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4 text-blue-400" />}
             </div>
-            <div className={`rounded-2xl px-3 py-2 max-w-[85%] text-sm ${
+            <div className={`rounded-2xl px-3 py-2 max-w-[90%] text-sm ${
               msg.role === "user" 
                 ? "bg-white/10 rounded-tr-sm" 
                 : "bg-blue-500/10 rounded-tl-sm border border-blue-500/10"
             }`}>
-              <p className="whitespace-pre-wrap">{msg.content || (msg.isStreaming ? "..." : "")}</p>
-              {msg.isStreaming && msg.content && (
-                <span className="inline-block w-1.5 h-4 bg-blue-400 animate-pulse ml-1" />
+              {msg.role === "assistant" ? (
+                <div className="prose prose-invert prose-sm max-w-none prose-p:my-1 prose-headings:my-2 prose-ul:my-1 prose-ol:my-1 prose-li:my-0 prose-code:bg-white/10 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-pre:bg-white/5 prose-pre:border prose-pre:border-white/10">
+                  <ReactMarkdown>{msg.content || (msg.isStreaming ? "..." : "")}</ReactMarkdown>
+                  {msg.isStreaming && msg.content && (
+                    <span className="inline-block w-1.5 h-4 bg-blue-400 animate-pulse ml-1" />
+                  )}
+                </div>
+              ) : (
+                <p className="whitespace-pre-wrap">{msg.content}</p>
               )}
             </div>
           </div>
@@ -91,7 +131,7 @@ const ChatPanel = memo(function ChatPanel({ messages, isLoading, onSendMessage }
         )}
       </div>
 
-      {/* Input - isolated, typing here doesn't re-render prototype */}
+      {/* Input */}
       <form onSubmit={handleSubmit} className="p-3 border-t border-white/10">
         <div className="flex gap-2">
           <input
@@ -146,7 +186,6 @@ const PrototypePanel = memo(function PrototypePanel({ code, onError }: Prototype
     </div>
   );
 }, (prevProps, nextProps) => {
-  // Only re-render if code changes - ignore onError ref changes
   return prevProps.code === nextProps.code;
 });
 
@@ -156,6 +195,7 @@ const PrototypePanel = memo(function PrototypePanel({ code, onError }: Prototype
 
 export default function PrototypePage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
+  const prototypeId = resolvedParams.id;
   const searchParams = useSearchParams();
   const title = searchParams.get("title") || "Untitled";
   const description = searchParams.get("description") || "";
@@ -166,17 +206,94 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
   const [prototypeCode, setPrototypeCode] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [paperContext, setPaperContext] = useState("");
+  const [chatWidth, setChatWidth] = useState<ChatWidth>("normal");
+  const [isSaved, setIsSaved] = useState(true);
+  const [isLoadedFromCache, setIsLoadedFromCache] = useState(false);
 
-  // Refs for callbacks (stable references)
+  // Refs
   const messagesRef = useRef<Message[]>([]);
   const isLoadingRef = useRef(false);
   const hasStarted = useRef(false);
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Keep refs in sync
   messagesRef.current = messages;
   isLoadingRef.current = isLoading;
 
-  console.log("[Prototype] Loading:", resolvedParams.id);
+  // ========== CACHING ==========
+  
+  // Load from cache on mount
+  useEffect(() => {
+    async function loadFromCache() {
+      try {
+        const res = await fetch(`/api/prototypes?id=${encodeURIComponent(prototypeId)}`);
+        if (res.ok) {
+          const cached = await res.json();
+          if (cached && cached.code) {
+            console.log("[Prototype] Loaded from cache:", cached.title);
+            setPrototypeCode(cached.code);
+            // Convert cached history to messages format
+            if (cached.history && cached.history.length > 0) {
+              const msgs: Message[] = cached.history.map((h: { role: string; parts: { text: string }[] }, i: number) => ({
+                id: `cached-${i}`,
+                role: h.role === "model" ? "assistant" : "user",
+                content: h.parts?.[0]?.text || "",
+                isStreaming: false
+              }));
+              setMessages(msgs);
+            }
+            setIsLoadedFromCache(true);
+            hasStarted.current = true;
+          }
+        }
+      } catch {
+        console.log("[Prototype] Not in cache, will generate new");
+      }
+    }
+    loadFromCache();
+  }, [prototypeId]);
+
+  // Auto-save with debounce
+  useEffect(() => {
+    if (!prototypeCode || isLoadedFromCache === false) return;
+    
+    setIsSaved(false);
+    
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        // Convert messages to history format for storage
+        const historyForStorage = messages.map(m => ({
+          role: m.role === "assistant" ? "model" : "user",
+          parts: [{ text: m.content }]
+        }));
+        
+        await fetch("/api/prototypes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: prototypeId,
+            paper_hash: hash,
+            title,
+            description,
+            code: prototypeCode,
+            history: historyForStorage,
+          }),
+        });
+        setIsSaved(true);
+        console.log("[Prototype] Saved to cache");
+      } catch (e) {
+        console.error("[Prototype] Failed to save:", e);
+      }
+    }, 2000);
+    
+    return () => {
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+  }, [prototypeCode, messages, prototypeId, hash, title, description, isLoadedFromCache]);
 
   // Load paper context
   useEffect(() => {
@@ -190,7 +307,7 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
       .catch(console.error);
   }, [hash]);
 
-  // The main send function - uses refs to avoid dependency issues
+  // The main send function
   const sendMessage = useCallback(async (content: string) => {
     if (isLoadingRef.current) return;
 
@@ -200,12 +317,10 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
     const userMsg: Message = { id: userMsgId, role: "user", content };
     const assistantMsg: Message = { id: assistantMsgId, role: "assistant", content: "", isStreaming: true };
 
-    // Add messages
     setMessages(prev => [...prev, userMsg, assistantMsg]);
     setIsLoading(true);
 
     try {
-      // Build history for API
       const historyForApi = [...messagesRef.current, userMsg].map(m => ({
         role: m.role === "assistant" ? "model" : "user",
         parts: [{ text: m.content }]
@@ -259,7 +374,6 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
         }
       }
 
-      // Mark complete
       setMessages(prev => prev.map(m =>
         m.id === assistantMsgId ? { ...m, isStreaming: false } : m
       ));
@@ -276,16 +390,16 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
     }
   }, []);
 
-  // Handle prototype errors - stable callback
+  // Handle prototype errors
   const handlePrototypeError = useCallback((error: string) => {
     if (!isLoadingRef.current) {
       sendMessage(`The prototype has an error: ${error}\n\nPlease fix it.`);
     }
   }, [sendMessage]);
 
-  // Auto-start agent when ready
+  // Auto-start agent when ready (only if not loaded from cache)
   useEffect(() => {
-    if (hasStarted.current || !title) return;
+    if (hasStarted.current || !title || isLoadedFromCache) return;
     if (hash && !paperContext) return;
     
     hasStarted.current = true;
@@ -294,7 +408,7 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
       : `Create an interactive prototype for "${title}". Description: ${description}`;
     
     sendMessage(initialPrompt);
-  }, [title, description, hash, paperContext, sendMessage]);
+  }, [title, description, hash, paperContext, sendMessage, isLoadedFromCache]);
 
   return (
     <main className="h-screen bg-black text-white flex flex-col overflow-hidden">
@@ -306,6 +420,18 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
         <div className="flex-1 min-w-0">
           <h1 className="font-medium text-sm truncate">{title}</h1>
         </div>
+        
+        {/* Save Status */}
+        {prototypeCode && (
+          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs ${
+            isSaved ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"
+          }`}>
+            <Save className="w-3 h-3" />
+            {isSaved ? "Saved" : "Saving..."}
+          </div>
+        )}
+        
+        {/* Status */}
         <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs ${
           isLoading ? "bg-blue-500/10 text-blue-400" : "bg-emerald-500/10 text-emerald-400"
         }`}>
@@ -314,12 +440,14 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
         </div>
       </header>
 
-      {/* Main Content - Chat and Prototype are isolated */}
+      {/* Main Content */}
       <div className="flex-1 flex min-h-0">
         <ChatPanel 
           messages={messages} 
           isLoading={isLoading} 
-          onSendMessage={sendMessage} 
+          onSendMessage={sendMessage}
+          width={chatWidth}
+          onWidthChange={setChatWidth}
         />
         <PrototypePanel 
           code={prototypeCode} 
