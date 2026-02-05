@@ -184,24 +184,37 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
                 // And let the ChatInterface show `status === "thinking"` thinking dots.
                 // Once done, the full text pushes to history.
                 
-            } else if (json.type === "tool_call_part") {
+            } else if (json.type === "tool_call_part" || json.type === "tool_call") {
                 setStatus("executing");
-                const part = json.part;
-                const toolCall = part.functionCall;
+                
+                // Handle both old format (tool_call_part with part.functionCall) and new format (tool_call with name/args)
+                let toolName: string;
+                let toolArgs: any;
+                
+                if (json.type === "tool_call") {
+                  // New format from updated agent
+                  toolName = json.name;
+                  toolArgs = json.args;
+                } else {
+                  // Legacy format
+                  const part = json.part;
+                  toolName = part.functionCall?.name;
+                  toolArgs = part.functionCall?.args;
+                }
                 
                 // Commit the accumulated text + tool call to history
+                const toolCallPart = { functionCall: { name: toolName, args: toolArgs } };
                 setHistory(prev => [...prev, { 
                     role: "model", 
-                    parts: accumulatedText ? [{ text: accumulatedText }, part] : [part]
+                    parts: accumulatedText ? [{ text: accumulatedText }, toolCallPart] : [toolCallPart]
                 }]);
 
-                if (toolCall.name === "render_prototype") {
-                     const args = toolCall.args;
+                if (toolName === "render_prototype") {
                      let code = "";
-                     if (typeof args === 'string') {
-                          try { code = JSON.parse(args).code; } catch (e) { console.error(e); }
+                     if (typeof toolArgs === 'string') {
+                          try { code = JSON.parse(toolArgs).code; } catch (e) { console.error(e); }
                      } else {
-                          code = args?.code;
+                          code = toolArgs?.code;
                      }
 
                      if (code) {
@@ -209,6 +222,18 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
                          setCurrentCode(code);
                      }
                 }
+            } else if (json.type === "done") {
+                // Stream completed
+                if (status !== "executing" && !signal?.aborted) {
+                   setStatus("idle");
+                   if (accumulatedText) {
+                       setHistory(prev => [...prev, { role: "model", parts: [{ text: accumulatedText }] }]);
+                   }
+                }
+            } else if (json.type === "error") {
+                console.error("Agent error:", json.message);
+                setAgentMessage("Error: " + json.message);
+                setStatus("idle");
             }
            } catch (e) {
              console.error("JSON Parse Error", e);
@@ -251,20 +276,28 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
   return (
     <main className="min-h-screen bg-black text-white flex flex-col overflow-hidden">
        {/* Header */}
-       <header className="h-14 border-b border-white/10 flex items-center px-4 justify-between bg-black/50 backdrop-blur-md sticky top-0 z-50">
+       <header className="h-16 border-b border-white/10 flex items-center px-6 justify-between bg-black/50 backdrop-blur-md sticky top-0 z-50">
           <div className="flex items-center gap-4">
-            <Link href="/" className="p-2 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white">
+            <Link href="/" className="p-2.5 hover:bg-white/10 rounded-xl transition-colors text-gray-400 hover:text-white border border-white/5">
               <ArrowLeft className="w-5 h-5" />
             </Link>
             <div className="flex items-center gap-3">
-                 <h1 className="font-bold text-sm md:text-base hidden md:block">{title || "Untitled Prototype"}</h1>
-                 <div className={clsx("w-2 h-2 rounded-full", status === "idle" ? "bg-green-500" : "bg-blue-500 animate-pulse")} />
+                 <h1 className="font-semibold text-base hidden md:block truncate max-w-md">{title || "Untitled Prototype"}</h1>
+                 <div className={clsx(
+                   "flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium",
+                   status === "idle" 
+                     ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
+                     : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                 )}>
+                   <div className={clsx("w-2 h-2 rounded-full", status === "idle" ? "bg-emerald-500" : "bg-blue-500 animate-pulse")} />
+                   {status === "idle" ? "Ready" : status === "thinking" ? "Thinking..." : "Rendering..."}
+                 </div>
             </div>
           </div>
           
           <button 
             onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
-            className="p-2 hover:bg-white/10 rounded-lg text-xs font-mono text-gray-400 border border-white/10"
+            className="px-4 py-2 hover:bg-white/10 rounded-xl text-xs font-medium text-gray-400 border border-white/10 transition-colors"
           >
              {isSidebarOpen ? "Hide Chat" : "Show Chat"}
           </button>
