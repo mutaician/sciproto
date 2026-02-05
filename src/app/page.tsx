@@ -18,7 +18,7 @@ export default function Home() {
 
   useEffect(() => {
     fetchPapers();
-  }, [analysis]); // Re-fetch when returning to home
+  }, [analysis]);
 
   const fetchPapers = async () => {
       try {
@@ -62,10 +62,10 @@ export default function Home() {
         console.log("Using Cached Analysis for:", hash);
         setAnalysis(cachedAnalysis);
         setIsAnalyzing(false);
-        return; // Skip new analysis
+        return;
       }
 
-      // 2. Analyze with Gemini (and save to cache using hash)
+      // 2. Analyze with Gemini
       const analyzeRes = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -86,7 +86,6 @@ export default function Home() {
   const handleReanalyze = async () => {
     if (!currentText) return;
     
-    // Force re-analysis by calling analyze API directly
     if (!confirm("Are you sure you want to re-analyze? This will consume more credits.")) return;
 
     setIsAnalyzing(true);

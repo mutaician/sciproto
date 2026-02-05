@@ -22,6 +22,8 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
   const [agentMessage, setAgentMessage] = useState<string>("");
   const [paperContext, setPaperContext] = useState<string>("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [prototypeTitle, setPrototypeTitle] = useState<string>("");
+  const [algorithmInfo, setAlgorithmInfo] = useState<string>("");
 
   // Prevent double-init
   const hasStarted = useRef(false);
@@ -208,32 +210,59 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
                     role: "model", 
                     parts: accumulatedText ? [{ text: accumulatedText }, toolCallPart] : [toolCallPart]
                 }]);
+                accumulatedText = ""; // Clear to prevent duplicate
 
                 if (toolName === "render_prototype") {
                      let code = "";
+                     let protoTitle = "";
+                     let algoInfo = "";
+                     
                      if (typeof toolArgs === 'string') {
-                          try { code = JSON.parse(toolArgs).code; } catch (e) { console.error(e); }
+                          try { 
+                            const parsed = JSON.parse(toolArgs);
+                            code = parsed.code;
+                            protoTitle = parsed.title || "";
+                            algoInfo = parsed.algorithm_implemented || "";
+                          } catch (e) { console.error(e); }
                      } else {
                           code = toolArgs?.code;
+                          protoTitle = toolArgs?.title || json.title || "";
+                          algoInfo = toolArgs?.algorithm_implemented || json.algorithm || "";
                      }
 
                      if (code) {
                          code = code.replace(/^```[\w\s]*\n/, "").replace(/```$/, "");
                          setCurrentCode(code);
+                         // Reset fixing flag - new code is being rendered
+                         isFixingRef.current = false;
                      }
+                     
+                     if (protoTitle) setPrototypeTitle(protoTitle);
+                     if (algoInfo) setAlgorithmInfo(algoInfo);
                 }
             } else if (json.type === "done") {
                 // Stream completed
+                isFixingRef.current = false; // Reset on completion
                 if (status !== "executing" && !signal?.aborted) {
                    setStatus("idle");
                    if (accumulatedText) {
                        setHistory(prev => [...prev, { role: "model", parts: [{ text: accumulatedText }] }]);
+                       accumulatedText = ""; // Clear to prevent duplicate in end-of-stream handler
                    }
                 }
             } else if (json.type === "error") {
                 console.error("Agent error:", json.message);
-                setAgentMessage("Error: " + json.message);
+                const errorMsg = json.message || "Unknown error";
+                setAgentMessage("Error: " + errorMsg);
+                isFixingRef.current = false; // Reset on error
                 setStatus("idle");
+                accumulatedText = ""; // Clear to prevent duplicate
+                
+                // Add error to history so user can see it
+                setHistory(prev => [...prev, { 
+                  role: "model", 
+                  parts: [{ text: `⚠️ ${errorMsg}${json.retryable ? '\n\nYou can try again by sending another message.' : ''}` }] 
+                }]);
             }
            } catch (e) {
              console.error("JSON Parse Error", e);
@@ -257,9 +286,19 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
     }
   };
 
-  const handleRenderStatus = (status: 'success' | 'error', payload: any) => {
+  // Track if we're currently fixing an error to prevent loops
+  const isFixingRef = useRef(false);
+  
+  const handleRenderStatus = (renderStatus: 'success' | 'error', payload: any) => {
+    // Prevent calling this while already processing
+    if (isFixingRef.current && renderStatus === 'error') {
+      console.log('[Page] Already fixing an error, ignoring duplicate');
+      return;
+    }
+    
     setTimeout(() => {
-        if (status === 'success') {
+        if (renderStatus === 'success') {
+             isFixingRef.current = false;
              setStatus("idle");
              setAgentMessage("Prototype Ready");
              setHistory(prev => [...prev, { 
@@ -267,64 +306,81 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
                   parts: [{ functionResponse: { name: 'render_prototype', response: { success: true, message: "Rendered successfully. Ready for user feedback." } } }] 
              }]);
         } else {
-            setAgentMessage("Auto-fixing Error...");
-            startAgentLoop(undefined, { name: 'render_prototype', response: { success: false, error: payload } });
+            // Only auto-fix if not already fixing
+            if (!isFixingRef.current) {
+              isFixingRef.current = true;
+              setAgentMessage("Auto-fixing Error...");
+              console.log('[Page] Sending error to agent for fix:', payload?.slice?.(0, 100) || payload);
+              startAgentLoop(undefined, { name: 'render_prototype', response: { success: false, error: payload } });
+            }
         }
-    }, 1000);
+    }, 500);
   };
 
   return (
     <main className="min-h-screen bg-black text-white flex flex-col overflow-hidden">
        {/* Header */}
-       <header className="h-16 border-b border-white/10 flex items-center px-6 justify-between bg-black/50 backdrop-blur-md sticky top-0 z-50">
-          <div className="flex items-center gap-4">
-            <Link href="/" className="p-2.5 hover:bg-white/10 rounded-xl transition-colors text-gray-400 hover:text-white border border-white/5">
+       <header className="h-auto min-h-16 border-b border-white/10 flex items-center px-6 py-3 justify-between bg-black/50 backdrop-blur-md sticky top-0 z-50">
+          <div className="flex items-center gap-4 flex-1 min-w-0">
+            <Link href="/" className="p-2.5 hover:bg-white/10 rounded-xl transition-colors text-gray-400 hover:text-white border border-white/5 flex-shrink-0">
               <ArrowLeft className="w-5 h-5" />
             </Link>
-            <div className="flex items-center gap-3">
-                 <h1 className="font-semibold text-base hidden md:block truncate max-w-md">{title || "Untitled Prototype"}</h1>
-                 <div className={clsx(
-                   "flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium",
-                   status === "idle" 
-                     ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
-                     : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
-                 )}>
-                   <div className={clsx("w-2 h-2 rounded-full", status === "idle" ? "bg-emerald-500" : "bg-blue-500 animate-pulse")} />
-                   {status === "idle" ? "Ready" : status === "thinking" ? "Thinking..." : "Rendering..."}
+            <div className="flex flex-col gap-1 min-w-0 flex-1">
+                 <div className="flex items-center gap-3">
+                   <h1 className="font-semibold text-base truncate max-w-lg">
+                     {prototypeTitle || title || "Untitled Prototype"}
+                   </h1>
+                   <div className={clsx(
+                     "flex items-center gap-2 px-3 py-1 rounded-full text-xs font-medium flex-shrink-0",
+                     status === "idle" 
+                       ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" 
+                       : "bg-blue-500/10 text-blue-400 border border-blue-500/20"
+                   )}>
+                     <div className={clsx("w-2 h-2 rounded-full", status === "idle" ? "bg-emerald-500" : "bg-blue-500 animate-pulse")} />
+                     {status === "idle" ? "Ready" : status === "thinking" ? "Thinking..." : "Rendering..."}
+                   </div>
                  </div>
+                 {algorithmInfo && (
+                   <p className="text-xs text-gray-500 truncate max-w-xl">
+                     <span className="text-purple-400">Algorithm:</span> {algorithmInfo}
+                   </p>
+                 )}
             </div>
           </div>
           
           <button 
             onClick={() => setIsSidebarOpen(!isSidebarOpen)} 
-            className="px-4 py-2 hover:bg-white/10 rounded-xl text-xs font-medium text-gray-400 border border-white/10 transition-colors"
+            className="px-4 py-2 hover:bg-white/10 rounded-xl text-xs font-medium text-gray-400 border border-white/10 transition-colors flex-shrink-0"
           >
              {isSidebarOpen ? "Hide Chat" : "Show Chat"}
           </button>
        </header>
 
-       {/* Workspace */}
-       <div className="flex-1 flex overflow-hidden">
-           {/* Left: Chat Interface */}
+       {/* Workspace - Fixed height container */}
+       <div className="flex-1 flex h-[calc(100vh-4rem)]">
+           {/* Left: Chat Interface - Independent scroll */}
            <div className={clsx(
                "transition-all duration-300 ease-in-out border-r border-white/10 flex flex-col",
-               isSidebarOpen ? "w-[30%] min-w-[320px] translate-x-0" : "w-0 min-w-0 -translate-x-full opacity-0"
+               isSidebarOpen ? "w-[380px] flex-shrink-0" : "w-0 overflow-hidden"
            )}>
-               <ChatInterface 
-                    history={history} 
-                    onSendMessage={(msg) => startAgentLoop(msg)} 
-                    status={status}
-                    className="h-full" 
-               />
+               {isSidebarOpen && (
+                 <ChatInterface 
+                      history={history} 
+                      onSendMessage={(msg) => startAgentLoop(msg)} 
+                      status={status}
+                      currentCode={currentCode}
+                      className="h-full w-full" 
+                 />
+               )}
            </div>
 
-           {/* Right: Prototype */}
-           <div className="flex-1 relative bg-gray-900/50">
+           {/* Right: Prototype - Full screen area */}
+           <div className="flex-1 relative bg-gray-900/50 flex flex-col min-w-0">
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-blue-900/10 via-transparent to-transparent pointer-events-none" />
 
-              {/* Central Status Pill (Only nice to have if loading init) */}
+              {/* Central Status Pill (Only shows when loading) */}
               {!currentCode && (
-                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-4">
+                 <div className="flex-1 flex flex-col items-center justify-center gap-4 relative z-10">
                       {status === "thinking" && <RefreshCw className="w-8 h-8 animate-spin text-blue-500" />}
                       <p className="text-gray-500 font-mono text-sm animate-pulse">
                           {status === 'thinking' ? "Analyzing Paper & Designing..." : "Waiting for Agent..."}
@@ -332,16 +388,16 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
                  </div>
               )}
 
-              {/* Rendered Prototype */}
-              <div className="w-full h-full">
-                  {currentCode && (
-                      <PrototypeRenderer code={currentCode} onRenderStatus={(s, p) => {
-                          if (status === 'executing') {
-                              handleRenderStatus(s, p);
-                          }
-                      }} />
-                  )}
-              </div>
+              {/* Rendered Prototype - Full area */}
+              {currentCode && (
+                <div className="flex-1 relative z-10">
+                    <PrototypeRenderer code={currentCode} onRenderStatus={(s, p) => {
+                        if (status === 'executing') {
+                            handleRenderStatus(s, p);
+                        }
+                    }} />
+                </div>
+              )}
            </div>
        </div>
     </main>

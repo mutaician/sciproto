@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Loader2, Sparkles } from "lucide-react";
 
-// Steps for the "Fake" streaming effect to keep user entertained
+// Steps for the loading effect
 const LOADING_STEPS = [
   "Deep Scanning Research Paper...",
   "Extracting Core Equations...",
@@ -77,13 +77,13 @@ export default function AnalyzingOverlay({ isAnalyzing }: { isAnalyzing: boolean
             </p>
         </div>
 
-        {/* Progress Bar (Fake but satisfying) */}
+        {/* Progress Bar */}
         <div className="w-full h-1 bg-white/10 rounded-full overflow-hidden">
             <motion.div 
                className="h-full bg-gradient-to-r from-blue-500 to-purple-500"
                initial={{ width: "0%" }}
                animate={{ width: "100%" }}
-               transition={{ duration: 15, repeat: Infinity, ease: "linear" }} // 15s generic wait time
+               transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
             />
         </div>
 
@@ -91,3 +91,4 @@ export default function AnalyzingOverlay({ isAnalyzing }: { isAnalyzing: boolean
     </div>
   );
 }
+

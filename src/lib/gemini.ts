@@ -202,7 +202,7 @@ For simulation_possibilities, focus on the most impressive and educational demon
 
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-3-flash-preview",
+      model: "gemini-3-pro-preview",
       contents: userPrompt,
       config: {
         systemInstruction: ANALYSIS_SYSTEM_PROMPT,
