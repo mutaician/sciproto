@@ -8,6 +8,7 @@ interface ChatInterfaceProps {
   onSendMessage: (message: string) => void;
   status: "idle" | "thinking" | "executing" | "waiting_for_user";
   currentCode?: string; // Current prototype code for context
+  streamingText?: string; // Text currently being streamed from agent
   className?: string;
 }
 
@@ -28,17 +29,17 @@ const HIDDEN_MESSAGE_PATTERNS = [
   "Task: Create a prototype",
 ];
 
-export default function ChatInterface({ history, onSendMessage, status, currentCode, className }: ChatInterfaceProps) {
+export default function ChatInterface({ history, onSendMessage, status, currentCode, streamingText, className }: ChatInterfaceProps) {
   const [input, setInput] = useState("");
   const [showSuggestions, setShowSuggestions] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Auto-scroll to bottom
+  // Auto-scroll to bottom when messages change or streaming
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [history, status]);
+  }, [history, status, streamingText]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,6 +71,11 @@ export default function ChatInterface({ history, onSendMessage, status, currentC
     return true;
   });
 
+  // Combine visible messages with streaming text for display
+  const displayMessages = streamingText
+    ? [...visibleMessages, { role: 'model', parts: [{ text: streamingText }], isStreaming: true }]
+    : visibleMessages;
+
   return (
     <div className={clsx("flex flex-col h-full w-full bg-black/40 backdrop-blur-md", className)}>
       
@@ -88,7 +94,7 @@ export default function ChatInterface({ history, onSendMessage, status, currentC
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4 overscroll-contain">
          
          {/* Empty State with Quick Actions */}
-         {visibleMessages.length === 0 && status === "idle" && (
+         {displayMessages.length === 0 && status === "idle" && (
            <div className="flex flex-col items-center justify-center h-full text-center py-8 space-y-6">
              <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
                <Wand2 className="w-8 h-8 text-blue-400" />
@@ -121,23 +127,25 @@ export default function ChatInterface({ history, onSendMessage, status, currentC
            </div>
          )}
 
-         {visibleMessages.map((msg, idx) => {
+         {displayMessages.map((msg, idx) => {
              const isUser = msg.role === 'user';
              const text = getMessageText(msg.parts);
              const isTool = hasToolCall(msg.parts);
+             const isStreaming = msg.isStreaming;
 
              if (!text && !isTool) return null; // Skip empty
 
              return (
                  <motion.div 
-                    key={idx} 
+                    key={isStreaming ? 'streaming' : idx} 
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     className={clsx("flex gap-3", isUser ? "flex-row-reverse" : "flex-row")}
                  >
                     <div className={clsx(
                         "w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1",
-                        isUser ? "bg-white/10" : "bg-blue-500/20 text-blue-400"
+                        isUser ? "bg-white/10" : "bg-blue-500/20 text-blue-400",
+                        isStreaming && "animate-pulse"
                     )}>
                         {isUser ? <User className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                     </div>
@@ -147,6 +155,7 @@ export default function ChatInterface({ history, onSendMessage, status, currentC
                         isUser ? "bg-white/10 text-white rounded-tr-none" : "bg-blue-500/10 text-gray-200 rounded-tl-none border border-blue-500/10"
                     )}>
                         {text && <div className="whitespace-pre-wrap">{text}</div>}
+                        {isStreaming && <span className="inline-block w-1 h-4 bg-blue-400 animate-pulse ml-1 align-middle" />}
                         
                         {/* Tool Call Indicator */}
                         {isTool && (
@@ -160,8 +169,8 @@ export default function ChatInterface({ history, onSendMessage, status, currentC
              );
          })}
          
-         {/* Typing Indicator */}
-         {status === "thinking" && (
+         {/* Typing Indicator - Only show when thinking AND no streaming text yet */}
+         {status === "thinking" && !streamingText && (
              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-3">
                  <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 flex items-center justify-center flex-shrink-0 animate-pulse">
                      <Bot className="w-4 h-4" />

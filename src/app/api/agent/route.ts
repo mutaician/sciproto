@@ -9,16 +9,33 @@ const ai = new GoogleGenAI({ apiKey });
 // SYSTEM INSTRUCTION - Smart agent for proving research paper concepts
 // ============================================================================
 
-const systemInstruction = `You are SciProto AI, an expert at transforming research papers into WORKING PROTOTYPES that PROVE the paper's ideas actually work.
+const systemInstruction = `You are SciProto AI, a helpful assistant that can create interactive prototypes from research papers.
 
-## YOUR MISSION
-You don't just visualize papers - you IMPLEMENT their core algorithms and let users VALIDATE the claims. Every prototype should answer: "Does this theory actually work?"
+## YOUR ROLE
+You're a conversational AI assistant. You can:
+1. Answer questions about the paper or prototype
+2. Explain concepts and algorithms
+3. Create or update prototypes ONLY when the user asks for changes
 
-## WORKFLOW
-1. **Understand** the paper's core concept/algorithm
-2. **Plan** how to make it interactive (what parameters can users adjust?)
-3. **Implement** the actual algorithm with real calculations
-4. **Call render_prototype** with your complete code
+## WHEN TO USE render_prototype
+✅ USE the tool when:
+- User asks to "create", "build", "make", "generate" a prototype
+- User asks to "change", "modify", "update", "fix" the prototype
+- User asks for specific feature additions ("add a slider", "show a chart")
+- The initial message contains paper content (first prototype generation)
+- There's an error that needs fixing
+
+❌ DO NOT use the tool when:
+- User says "hi", "hey", "hello", "thanks"
+- User asks a question ("what is this?", "how does it work?")
+- User wants explanation without changes
+- User is just chatting
+
+## CONVERSATION STYLE
+- Be friendly and concise
+- For simple greetings, just respond naturally
+- For questions, explain clearly without regenerating the prototype
+- Only call render_prototype when actual changes are needed
 
 ## WHAT MAKES A GREAT PROTOTYPE
 - **Interactive**: Users can adjust parameters and see results change in real-time
@@ -164,71 +181,12 @@ The prototype should:
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { history, message, functionResponse, paperContext, useThinking } = body;
+    const { history, isInitial } = body;
 
-    // Build conversation contents
-    let contents = history || [];
-    const isFirstMessage = contents.length === 0;
+    // Use history directly - page already formats it correctly
+    const contents = history || [];
 
-    // Add paper context as initial context if provided and this is the first message
-    if (paperContext && isFirstMessage) {
-      // Truncate very long papers but keep the important parts
-      const truncatedContext = paperContext.length > 40000 
-        ? paperContext.slice(0, 35000) + "\n\n[... paper truncated for length ...]"
-        : paperContext;
-        
-      contents.push({
-        role: "user",
-        parts: [{ text: `PAPER TEXT:\n\n${truncatedContext}` }],
-      });
-      contents.push({
-        role: "model",
-        parts: [{ text: "I've analyzed the paper. I'll create an interactive prototype that PROVES its core concepts work. What aspect would you like me to implement?" }],
-      });
-    }
-
-    // Append new user message
-    if (message) {
-      contents.push({ role: "user", parts: [{ text: message }] });
-    }
-
-    // Append function/tool response with enhanced feedback
-    if (functionResponse) {
-      const response = functionResponse.response;
-      
-      // If it was an error, add helpful context for the model
-      if (response && !response.success && response.error) {
-        const enhancedResponse = {
-          ...response,
-          hint: "Fix the specific error and re-render. Don't rewrite everything - make targeted fixes.",
-        };
-        contents.push({
-          role: "tool",
-          parts: [
-            {
-              functionResponse: {
-                name: functionResponse.name,
-                response: enhancedResponse,
-              },
-            },
-          ],
-        });
-      } else {
-        contents.push({
-          role: "tool",
-          parts: [
-            {
-              functionResponse: {
-                name: functionResponse.name,
-                response: functionResponse.response,
-              },
-            },
-          ],
-        });
-      }
-    }
-
-    console.log(`[Agent] Calling Gemini, contents: ${contents.length} messages`);
+    console.log(`[Agent] Calling Gemini with ${contents.length} messages, isInitial: ${isInitial}`);
 
     // Retry logic for overloaded model
     const MAX_RETRIES = 3;
@@ -273,66 +231,84 @@ export async function POST(req: NextRequest) {
         const encoder = new TextEncoder();
         
         try {
+          // Track if we've already sent a function call for this response
+          let functionCallSent = false;
+          
           for await (const chunk of response) {
-            // Extract text content
+            // Extract text content - try multiple approaches
             let text = "";
             try {
-              if (typeof chunk.text === "string") {
-                text = chunk.text;
-              } else if (typeof (chunk as any).text === "function") {
+              // Method 1: Direct text property (function)
+              if (typeof (chunk as any).text === "function") {
                 text = (chunk as any).text();
-              } else {
-                text = chunk.candidates?.[0]?.content?.parts?.[0]?.text || "";
+              }
+              // Method 2: Direct text property (string)
+              else if (typeof chunk.text === "string") {
+                text = chunk.text;
+              }
+              // Method 3: From candidates parts
+              else {
+                const textPart = chunk.candidates?.[0]?.content?.parts?.find(
+                  (p: any) => typeof p.text === "string"
+                );
+                text = textPart?.text || "";
               }
             } catch {
               // Ignore text extraction errors
             }
 
-            // Send text chunks
-            if (text) {
+            // Send text chunks (only if non-empty)
+            if (text && text.trim()) {
               controller.enqueue(
                 encoder.encode(JSON.stringify({ type: "text", content: text }) + "\n")
               );
             }
 
-            // Check for function calls in candidates
-            const parts = chunk.candidates?.[0]?.content?.parts;
-            if (parts) {
-              for (const part of parts) {
-                if ((part as any).functionCall) {
-                  const functionCall = (part as any).functionCall;
-                  console.log("[Agent] Function call:", functionCall.name);
+            // Check for function calls - only send once per response
+            if (!functionCallSent) {
+              // Check in candidates parts (primary method)
+              const parts = chunk.candidates?.[0]?.content?.parts;
+              if (parts) {
+                for (const part of parts) {
+                  if ((part as any).functionCall) {
+                    const functionCall = (part as any).functionCall;
+                    console.log("[Agent] Function call:", functionCall.name);
+                    
+                    controller.enqueue(
+                      encoder.encode(
+                        JSON.stringify({
+                          type: "tool_call",
+                          name: functionCall.name,
+                          args: functionCall.args,
+                          title: functionCall.args?.title,
+                        }) + "\n"
+                      )
+                    );
+                    functionCallSent = true;
+                    break;
+                  }
+                }
+              }
+              
+              // Fallback: check chunk.functionCalls (older SDK versions)
+              if (!functionCallSent) {
+                const functionCalls = (chunk as any).functionCalls;
+                if (functionCalls && Array.isArray(functionCalls) && functionCalls.length > 0) {
+                  const call = functionCalls[0]; // Take first one only
+                  console.log("[Agent] Function call (fallback):", call.name);
                   
                   controller.enqueue(
                     encoder.encode(
                       JSON.stringify({
                         type: "tool_call",
-                        name: functionCall.name,
-                        args: functionCall.args,
-                        title: functionCall.args?.title,
+                        name: call.name,
+                        args: call.args,
+                        title: call.args?.title,
                       }) + "\n"
                     )
                   );
+                  functionCallSent = true;
                 }
-              }
-            }
-
-            // Also check for functionCalls at chunk level (legacy format)
-            const functionCalls = (chunk as any).functionCalls;
-            if (functionCalls && Array.isArray(functionCalls)) {
-              for (const call of functionCalls) {
-                console.log("[Agent] Function call (legacy):", call.name);
-                
-                controller.enqueue(
-                  encoder.encode(
-                    JSON.stringify({
-                      type: "tool_call",
-                      name: call.name,
-                      args: call.args,
-                      title: call.args?.title,
-                    }) + "\n"
-                  )
-                );
               }
             }
           }

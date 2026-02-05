@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useCallback } from "react";
+import React, { useEffect, useRef, useState, useCallback, memo } from "react";
 import { AlertCircle, RefreshCw, X } from "lucide-react";
 
 interface PrototypeRendererProps {
@@ -11,13 +11,14 @@ interface PrototypeRendererProps {
 // Maximum retry attempts for auto-fix
 const MAX_RETRIES = 3;
 
-export default function PrototypeRenderer({ code, onRenderStatus }: PrototypeRendererProps) {
+// Memoized to prevent re-renders when parent state changes
+const PrototypeRenderer = memo(function PrototypeRenderer({ code, onRenderStatus }: PrototypeRendererProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   
-  // Track retries across code changes - this persists!
-  const retryCountRef = useRef(0);
+  // Track retries across code changes - use refs for values not needed in render
   const lastErrorRef = useRef<string | null>(null);
   const hasReportedErrorRef = useRef(false);
 
@@ -226,28 +227,28 @@ export default function PrototypeRenderer({ code, onRenderStatus }: PrototypeRen
             const errorMsg = e.data.message;
             setError(errorMsg);
             
-            // Check if this is a NEW error or same error repeating
-            const isSameError = lastErrorRef.current === errorMsg;
             lastErrorRef.current = errorMsg;
             
             // Increment retry count
-            retryCountRef.current += 1;
-            
-            console.log(`[Renderer] Error #${retryCountRef.current}/${MAX_RETRIES}: ${errorMsg.slice(0, 100)}`);
-            
-            // Only trigger auto-fix if:
-            // 1. We haven't exceeded retry limit
-            // 2. We haven't already reported this specific render attempt's error
-            if (retryCountRef.current <= MAX_RETRIES && !hasReportedErrorRef.current) {
-              hasReportedErrorRef.current = true; // Prevent double-reporting
-              onRenderStatus?.('error', errorMsg);
-            } else if (retryCountRef.current > MAX_RETRIES) {
-              console.log('[Renderer] Max retries reached, stopping auto-fix. User can manually retry.');
-            }
+            setRetryCount(prev => {
+              const newCount = prev + 1;
+              console.log(`[Renderer] Error #${newCount}/${MAX_RETRIES}: ${errorMsg.slice(0, 100)}`);
+              
+              // Only trigger auto-fix if:
+              // 1. We haven't exceeded retry limit
+              // 2. We haven't already reported this specific render attempt's error
+              if (newCount <= MAX_RETRIES && !hasReportedErrorRef.current) {
+                hasReportedErrorRef.current = true; // Prevent double-reporting
+                onRenderStatus?.('error', errorMsg);
+              } else if (newCount > MAX_RETRIES) {
+                console.log('[Renderer] Max retries reached, stopping auto-fix. User can manually retry.');
+              }
+              return newCount;
+            });
         } else if (e.data?.type === 'RENDER_SUCCESS') {
             setError(null);
             // Reset retry count on success
-            retryCountRef.current = 0;
+            setRetryCount(0);
             lastErrorRef.current = null;
             onRenderStatus?.('success', {});
         }
@@ -264,14 +265,12 @@ export default function PrototypeRenderer({ code, onRenderStatus }: PrototypeRen
 
   const handleManualRetry = () => {
     // Reset retry count and allow another round of auto-fixes
-    retryCountRef.current = 0;
+    setRetryCount(0);
     hasReportedErrorRef.current = false;
     if (code && error) {
       onRenderStatus?.('error', error);
     }
   };
-  
-  const retryCount = retryCountRef.current;
 
   return (
     <div className="w-full h-full bg-gray-950 relative">
@@ -336,4 +335,6 @@ export default function PrototypeRenderer({ code, onRenderStatus }: PrototypeRen
        )}
     </div>
   );
-}
+});
+
+export default PrototypeRenderer;
