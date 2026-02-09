@@ -118,36 +118,22 @@ export default function DiscoverPage() {
     setAnalyzingPaperId(paper.id);
 
     try {
-      // Fetch paper with text extraction
-      const response = await fetch(`/api/arxiv/${encodeURIComponent(paper.id)}?text=true`);
+      // Fetch and analyze paper in single call
+      const response = await fetch(`/api/arxiv/${encodeURIComponent(paper.id)}?analyze=true`);
       
       if (!response.ok) {
-        throw new Error("Failed to fetch paper");
+        const error = await response.json();
+        throw new Error(error.details || "Failed to analyze paper");
       }
 
       const data = await response.json();
       
-      if (!data.text) {
-        throw new Error("Failed to extract text from PDF");
+      if (!data.analysis) {
+        throw new Error("No analysis returned");
       }
 
       // Create a hash from the arXiv ID
-      const hash = `arxiv-${paper.id}`;
-
-      // Analyze the paper
-      const analyzeResponse = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text: data.text,
-          hash,
-          filename: `${paper.id}.pdf`,
-        }),
-      });
-
-      if (!analyzeResponse.ok) {
-        throw new Error("Failed to analyze paper");
-      }
+      const hash = `arxiv-${paper.id.replace(/[^a-zA-Z0-9]/g, "-")}`;
 
       // Navigate to the paper page to see analysis and choose simulation
       router.push(`/papers/${hash}`);

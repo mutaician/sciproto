@@ -339,12 +339,11 @@ export async function fetchArxivPaper(arxivId: string): Promise<ArxivPaper | nul
 }
 
 /**
- * Fetch PDF content from arXiv and extract text using Gemini
- * Uses Gemini's native PDF understanding (serverless compatible)
+ * Fetch PDF content from arXiv and extract text
+ * Uses unpdf (serverless compatible, no canvas required)
  */
 export async function fetchArxivPdfText(arxivId: string): Promise<string> {
-  // Import here to avoid circular dependency at module load time
-  const { extractPdfText } = await import("./gemini");
+  const { extractText } = await import("unpdf");
   
   const cleanId = arxivId.replace(/v\d+$/, "");
   const pdfUrl = `https://arxiv.org/pdf/${cleanId}.pdf`;
@@ -364,11 +363,11 @@ export async function fetchArxivPdfText(arxivId: string): Promise<string> {
   const arrayBuffer = await response.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
   
-  // Use Gemini to extract text (serverless compatible)
-  console.log("[arXiv] Extracting text with Gemini...");
-  const text = await extractPdfText(buffer);
+  console.log("[arXiv] Extracting text with unpdf...");
+  const { text } = await extractText(buffer);
   
-  return text;
+  // unpdf returns text as array of strings (one per page), join them
+  return Array.isArray(text) ? text.join("\n") : text;
 }
 
 /**

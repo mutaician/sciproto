@@ -46,7 +46,7 @@ export default function PapersPage() {
     setIsAnalyzing(true);
 
     try {
-      // 1. Upload & Extract Text
+      // Step 1: Upload PDF and extract text
       const formData = new FormData();
       formData.append("file", file);
 
@@ -54,24 +54,29 @@ export default function PapersPage() {
         method: "POST",
         body: formData,
       });
+      
+      if (!uploadRes.ok) {
+        const error = await uploadRes.json();
+        throw new Error(error.error || "Failed to upload PDF");
+      }
+      
       const { text, hash, cachedAnalysis } = await uploadRes.json();
-
-      if (!text) throw new Error("Failed to extract text");
 
       // If cached, redirect immediately
       if (cachedAnalysis) {
-        console.log("Using Cached Analysis for:", hash);
+        console.log("Using cached analysis for:", hash);
         router.push(`/papers/${hash}`);
         return;
       }
 
-      // 2. Analyze with Gemini
+      // Step 2: Analyze the extracted text
+      console.log("Analyzing paper...");
       const analyzeRes = await fetch("/api/analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text, hash, filename: file.name }),
       });
-      
+
       if (!analyzeRes.ok) {
         throw new Error("Analysis failed");
       }

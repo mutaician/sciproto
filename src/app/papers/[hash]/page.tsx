@@ -66,34 +66,6 @@ export default function PaperPage({ params }: { params: Promise<{ hash: string }
     router.push(`/prototype/${id}?${params.toString()}`);
   };
 
-  const handleReanalyze = async () => {
-    if (!paper?.raw_text) return;
-    
-    if (!confirm("Are you sure you want to re-analyze? This will consume more credits.")) return;
-
-    setIsLoading(true);
-
-    try {
-      const analyzeRes = await fetch("/api/analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          text: paper.raw_text, 
-          hash: paperHash, 
-          filename: paper.filename 
-        }),
-      });
-       
-      const analysisData = await analyzeRes.json();
-      setAnalysis(analysisData);
-    } catch (e) {
-      console.error("Re-analysis failed:", e);
-      alert("Failed to re-analyze.");
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
   return (
     <main className="min-h-screen flex flex-col relative overflow-hidden">
       {/* Background */}
@@ -160,7 +132,6 @@ export default function PaperPage({ params }: { params: Promise<{ hash: string }
           <AnalysisPanel 
             analysis={analysis} 
             onSimulate={handleSimulate} 
-            onReanalyze={handleReanalyze}
             onBack={() => router.push("/papers")} 
           />
         )}

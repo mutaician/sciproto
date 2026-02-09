@@ -2,7 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAnalysis } from "@/lib/db";
-import { extractPdfText } from "@/lib/gemini";
+import { extractText } from "unpdf";
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     const hashArray = Array.from(new Uint8Array(hashBuffer));
     const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 
-    // 2. Check Cache
+    // 2. Check Cache (analysis already done before)
     const cached = getAnalysis(hashHex);
     if (cached) {
         console.log("Cache Hit:", hashHex);
@@ -32,14 +32,16 @@ export async function POST(req: NextRequest) {
          });
     }
 
-    // 3. Extract text from PDF using Gemini (serverless compatible)
-    console.log("Extracting PDF text with Gemini...");
-    const text = await extractPdfText(buffer);
+    // 3. Extract text from PDF using unpdf (serverless compatible)
+    console.log("Extracting PDF text...");
+    const result = await extractText(buffer);
+    // unpdf returns text as array of strings (one per page), join them
+    const text = Array.isArray(result.text) ? result.text.join("\n") : result.text;
 
     return NextResponse.json({ text, hash: hashHex });
 
   } catch (error) {
     console.error("Upload Error:", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to parse PDF" }, { status: 500 });
   }
 }

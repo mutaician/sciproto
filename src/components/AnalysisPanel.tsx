@@ -12,7 +12,7 @@ import clsx from "clsx";
 interface AnalysisPanelProps {
   analysis: PaperAnalysis | null;
   onSimulate: (sim: PaperAnalysis["simulation_possibilities"][0], index: number) => void;
-  onReanalyze: () => void;
+  onReanalyze?: () => void;
   onBack: () => void;
 }
 
@@ -86,6 +86,7 @@ export default function AnalysisPanel({ analysis, onSimulate, onReanalyze, onBac
                 </span>
               </div>
               
+{onReanalyze && (
               <button 
                  onClick={onReanalyze}
                  className="p-3 rounded-xl bg-white/5 border border-white/5 hover:bg-white/10 hover:border-white/20 transition-all group/refresh"
@@ -93,6 +94,7 @@ export default function AnalysisPanel({ analysis, onSimulate, onReanalyze, onBac
               >
                   <RefreshCw className="w-5 h-5 text-gray-400 group-hover/refresh:rotate-180 transition-transform duration-500" />
               </button>
+              )}
             </div>
 
             {/* Title & Summary */}

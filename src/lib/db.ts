@@ -6,28 +6,20 @@ import path from "path";
 // ============================================================================
 // 
 // LOCAL DEV: Uses JSON file storage (sciproto-db.json)
-// VERCEL PROD: This file-based approach won't work on Vercel!
+// VERCEL PROD: Uses /tmp (ephemeral but writable per invocation)
 // 
-// For Vercel deployment, you have these options:
-// 1. Vercel KV (Redis) - Best for key-value data like this
-//    - `pnpm add @vercel/kv` then use kv.get/kv.set
-// 2. Vercel Postgres - Good for relational data
-//    - `pnpm add @vercel/postgres`
-// 3. External DB (Supabase, PlanetScale, Neon)
-//
-// Quick Vercel KV migration:
-// ```
-// import { kv } from '@vercel/kv';
-// export async function getAnalysis(hash: string) {
-//   return await kv.get(`analysis:${hash}`);
-// }
-// export async function saveAnalysis(hash: string, ...) {
-//   await kv.set(`analysis:${hash}`, data);
-// }
-// ```
+// For persistent Vercel storage, add Vercel KV:
+//   1. Add KV from Vercel dashboard
+//   2. pnpm add @vercel/kv
+//   3. Replace functions below with kv.get/kv.set
 // ============================================================================
 
-const DB_PATH = path.join(process.cwd(), "sciproto-db.json");
+// On Vercel, use /tmp which is writable (but ephemeral per invocation)
+// Locally, use project root
+const isVercel = process.env.VERCEL === "1";
+const DB_PATH = isVercel 
+  ? "/tmp/sciproto-db.json"
+  : path.join(process.cwd(), "sciproto-db.json");
 
 interface DbSchema {
   analyses: Record<string, AnalysisEntry>;
@@ -54,12 +46,12 @@ interface PrototypeEntry {
   updated_at: number;
 }
 
-// Helper to read DB
+// Helper to read DB (safe for serverless)
 function readDb(): DbSchema {
-  if (!fs.existsSync(DB_PATH)) {
-    return { analyses: {}, prototypes: {} };
-  }
   try {
+    if (!fs.existsSync(DB_PATH)) {
+      return { analyses: {}, prototypes: {} };
+    }
     const data = fs.readFileSync(DB_PATH, "utf-8");
     const parsed = JSON.parse(data);
     // Migration: handle old format where analyses were at root level
@@ -68,13 +60,20 @@ function readDb(): DbSchema {
     }
     return { analyses: parsed.analyses || {}, prototypes: parsed.prototypes || {} };
   } catch (e) {
+    // If read fails (e.g., corruption), return empty
+    console.warn("[DB] Read failed, returning empty:", e);
     return { analyses: {}, prototypes: {} };
   }
 }
 
-// Helper to write DB
+// Helper to write DB (safe for serverless)
 function writeDb(data: DbSchema) {
-  fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
+  try {
+    fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2));
+  } catch (e) {
+    // On Vercel, /tmp writes might fail in edge cases - log but don't crash
+    console.warn("[DB] Write failed (serverless?):", e);
+  }
 }
 
 // ============================================================================
