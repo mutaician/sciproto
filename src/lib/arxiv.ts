@@ -364,7 +364,7 @@ export async function fetchArxivPdfText(arxivId: string): Promise<string> {
   const buffer = Buffer.from(arrayBuffer);
   
   console.log("[arXiv] Extracting text with unpdf...");
-  const { text } = await extractText(buffer);
+  const { text } = await extractText(new Uint8Array(buffer));
   
   // unpdf returns text as array of strings (one per page), join them
   return Array.isArray(text) ? text.join("\n") : text;

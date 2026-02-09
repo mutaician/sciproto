@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
 
     // 3. Extract text from PDF using unpdf (serverless compatible)
     console.log("Extracting PDF text...");
-    const result = await extractText(buffer);
+    const result = await extractText(new Uint8Array(buffer));
     // unpdf returns text as array of strings (one per page), join them
     const text = Array.isArray(result.text) ? result.text.join("\n") : result.text;
 
