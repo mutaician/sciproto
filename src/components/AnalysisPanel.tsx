@@ -11,7 +11,7 @@ import clsx from "clsx";
 
 interface AnalysisPanelProps {
   analysis: PaperAnalysis | null;
-  onSimulate: (sim: PaperAnalysis["simulation_possibilities"][0]) => void;
+  onSimulate: (sim: PaperAnalysis["simulation_possibilities"][0], index: number) => void;
   onReanalyze: () => void;
   onBack: () => void;
 }
@@ -306,7 +306,7 @@ export default function AnalysisPanel({ analysis, onSimulate, onReanalyze, onBac
                   whileHover={{ scale: 1.01 }}
                   whileTap={{ scale: 0.99 }}
                   className="glass-panel p-6 rounded-2xl cursor-pointer group hover:border-purple-500/50 transition-all relative overflow-hidden"
-                  onClick={() => onSimulate(sim)}
+                  onClick={() => onSimulate(sim, idx)}
                 >
                   <div className="absolute right-0 top-0 p-6 opacity-10 group-hover:opacity-20 transition-opacity">
                     <BrainCircuit className="w-24 h-24 text-purple-500 transform rotate-12 translate-x-4 -translate-y-4" />

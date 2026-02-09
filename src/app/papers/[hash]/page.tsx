@@ -51,10 +51,11 @@ export default function PaperPage({ params }: { params: Promise<{ hash: string }
     loadPaper();
   }, [paperHash]);
 
-  const handleSimulate = (sim: { title: string; description: string }) => {
-    const timestamp = Date.now();
+  const handleSimulate = (sim: { title: string; description: string }, index: number) => {
+    // Use paper hash + simulation index for consistent ID (no timestamp)
+    // This ensures the same simulation always gets the same prototype ID
     const slug = sim.title.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    const id = `${slug}-${timestamp}`;
+    const id = `${paperHash}-${index}-${slug}`;
     
     const params = new URLSearchParams({
       title: sim.title,

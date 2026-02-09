@@ -1,36 +1,165 @@
-Sciproto
+# SciProto 🔬
 
-## Getting Started
+**Transform Research Papers into Interactive Prototypes**
 
-First, run the development server:
+SciProto is an AI-powered platform that analyzes academic papers and generates interactive visualizations, helping you understand complex algorithms through hands-on exploration.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+> Built for the Gemini 3 Hackathon
+
+![Next.js](https://img.shields.io/badge/Next.js-15-black) ![Gemini 3](https://img.shields.io/badge/Gemini-3-blue) ![TypeScript](https://img.shields.io/badge/TypeScript-5-blue)
+
+## ✨ Features
+
+- **📄 Paper Analysis** - Upload any PDF or fetch from arXiv. Gemini 3 Pro extracts key algorithms, equations, and simulation opportunities
+- **🎮 Interactive Prototypes** - Each concept becomes a live React component with sliders, charts, and animations
+- **💬 Conversational Agent** - Chat to modify prototypes ("add gravity", "change the decay rate")
+- **🔍 arXiv Discovery** - Browse and analyze papers directly from arXiv's database
+- **💾 Smart Caching** - Papers and prototypes are cached by content hash for instant reloads
+
+## 🏗️ Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         Frontend                            │
+│  Next.js 15 + React + Framer Motion + TailwindCSS          │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                       API Routes                            │
+│  /api/upload    - PDF parsing + hash generation             │
+│  /api/analyze   - Full paper analysis (Gemini 3 Pro)        │
+│  /api/agent     - Streaming chat + prototype gen (Flash)    │
+│  /api/papers    - Paper CRUD                                │
+│  /api/prototypes - Prototype storage                        │
+│  /api/arxiv     - arXiv search proxy                        │
+└─────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────┐
+│                      Gemini 3 Models                        │
+│  gemini-3-pro-preview   - Deep paper analysis (JSON)        │
+│  gemini-3-flash-preview - Agent chat + code generation      │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## 🚀 Getting Started
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Prerequisites
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- Node.js 18+
+- pnpm (recommended) or npm
+- Gemini API key from [AI Studio](https://aistudio.google.com)
 
-## Learn More
+### Installation
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+# Clone the repo
+git clone https://github.com/mutaician/sciproto.git
+cd sciproto
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+# Install dependencies
+pnpm install
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+# Set up environment
+cp .env.example .env.local
+# Add your GEMINI_API_KEY to .env.local
 
-## Deploy on Vercel
+# Run development server
+pnpm dev
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Open [http://localhost:3000](http://localhost:3000)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Environment Variables
+
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+```
+
+## 📁 Project Structure
+
+```
+src/
+├── app/
+│   ├── api/
+│   │   ├── agent/       # Streaming chat agent
+│   │   ├── analyze/     # Paper analysis endpoint
+│   │   ├── arxiv/       # arXiv search proxy
+│   │   ├── papers/      # Paper storage
+│   │   ├── prototypes/  # Prototype CRUD
+│   │   └── upload/      # PDF upload + parsing
+│   ├── discover/        # arXiv browser
+│   ├── papers/          # Paper library
+│   │   └── [hash]/      # Individual paper view
+│   └── prototype/
+│       └── [id]/        # Prototype sandbox
+├── components/
+│   ├── AnalysisPanel.tsx    # Paper analysis display
+│   ├── ChatInterface.tsx     # Agent conversation
+│   ├── PrototypeRenderer.tsx # Sandboxed React runner
+│   └── UploadZone.tsx        # PDF drag-and-drop
+└── lib/
+    ├── arxiv.ts    # arXiv API client
+    ├── db.ts       # JSON file storage (dev) / Vercel KV (prod)
+    └── gemini.ts   # Gemini API wrapper + schemas
+```
+
+## 🔧 Key Technologies
+
+| Tech | Purpose |
+|------|---------|
+| **Next.js 15** | App Router, API routes, Turbopack |
+| **Gemini 3 Pro** | Structured paper analysis with JSON schema |
+| **Gemini 3 Flash** | Fast streaming agent + function calling |
+| **Framer Motion** | Smooth animations and transitions |
+| **Recharts** | Data visualization in prototypes |
+| **pdf-parse** | PDF text extraction |
+| **Zod** | Schema validation for Gemini responses |
+
+## 📝 How It Works
+
+### 1. Paper Upload
+PDF → text extraction → SHA-256 hash → cache check → return text
+
+### 2. Analysis (Gemini 3 Pro)
+```typescript
+const response = await ai.models.generateContent({
+  model: "gemini-3-pro-preview",
+  contents: paperText,
+  config: {
+    responseMimeType: "application/json",
+    responseSchema: PaperAnalysisSchema,
+  },
+});
+```
+
+Returns: title, summary, breakthrough_score, key_claims, testable_hypotheses, key_equations, simulation_possibilities
+
+### 3. Prototype Generation (Gemini 3 Flash)
+```typescript
+const response = await ai.models.generateContentStream({
+  model: "gemini-3-flash-preview",
+  contents: chatHistory,
+  config: {
+    tools: [{
+      functionDeclarations: [{
+        name: "render_prototype",
+        parameters: { code: "string", title: "string" }
+      }]
+    }]
+  },
+});
+```
+
+Streams text + function calls via NDJSON
+
+### 4. Sandbox Rendering
+Generated React code runs in an isolated iframe with:
+- Recharts, Framer Motion, Lucide icons pre-loaded
+- Tailwind CSS for styling
+- Error boundary with retry capability
+
+---
+
+Built with ❤️ for the [Gemini 3 Hackathon](https://gemini3.devpost.com/)
