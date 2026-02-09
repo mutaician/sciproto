@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["pdf-parse", "@napi-rs/canvas"],
+  // No external packages needed - using Gemini for PDF extraction
 };
 
 export default nextConfig;

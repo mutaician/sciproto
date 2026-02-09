@@ -286,3 +286,51 @@ ${paperText.slice(0, 5000)}`;
     throw new Error("Quick analysis failed");
   }
 }
+
+// ============================================================================
+// PDF TEXT EXTRACTION (using Gemini - serverless compatible)
+// ============================================================================
+
+/**
+ * Extract text from a PDF using Gemini's native PDF understanding.
+ * This works in serverless environments where canvas-based PDF parsers fail.
+ */
+export async function extractPdfText(pdfBuffer: Buffer): Promise<string> {
+  const base64Pdf = pdfBuffer.toString("base64");
+  
+  try {
+    const response = await ai.models.generateContent({
+      model: "gemini-3-flash-preview",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              inlineData: {
+                mimeType: "application/pdf",
+                data: base64Pdf,
+              },
+            },
+            {
+              text: `Extract ALL the text content from this PDF document. 
+              
+Output the complete text exactly as it appears, preserving:
+- All paragraphs and sections
+- Mathematical equations (use plain text notation)
+- Figure/table captions
+- References section
+- Any headers, footers, or page numbers
+
+Do not summarize or skip any content. Return the full text.`,
+            },
+          ],
+        },
+      ],
+    });
+
+    return response.text || "";
+  } catch (error) {
+    console.error("PDF text extraction failed:", error);
+    throw new Error("Failed to extract text from PDF");
+  }
+}

@@ -111,16 +111,17 @@ src/
 |------|---------|
 | **Next.js 15** | App Router, API routes, Turbopack |
 | **Gemini 3 Pro** | Structured paper analysis with JSON schema |
-| **Gemini 3 Flash** | Fast streaming agent + function calling |
+| **Gemini 3 Flash** | Streaming agent, code generation, PDF extraction |
 | **Framer Motion** | Smooth animations and transitions |
 | **Recharts** | Data visualization in prototypes |
-| **pdf-parse** | PDF text extraction |
 | **Zod** | Schema validation for Gemini responses |
 
 ## 📝 How It Works
 
 ### 1. Paper Upload
-PDF → text extraction → SHA-256 hash → cache check → return text
+PDF → Gemini Flash extracts text → SHA-256 hash → cache check → return text
+
+(Uses Gemini's native PDF understanding - serverless compatible, no canvas required)
 
 ### 2. Analysis (Gemini 3 Pro)
 ```typescript

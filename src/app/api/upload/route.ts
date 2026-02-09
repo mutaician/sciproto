@@ -2,17 +2,10 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { getAnalysis } from "@/lib/db";
-// crypto is available globally in Node 19+ / Bun
+import { extractPdfText } from "@/lib/gemini";
 
 export async function POST(req: NextRequest) {
   try {
-    // Lazy load pdf-parse
-    let pdfModule = require("pdf-parse");
-    // Handle ESM default export if present
-    if (pdfModule.default) {
-        pdfModule = pdfModule.default;
-    }
-    
     const formData = await req.formData();
     const file = formData.get("file") as File;
 
@@ -39,25 +32,9 @@ export async function POST(req: NextRequest) {
          });
     }
 
-    // 3. Parse PDF if not cached
-    let text = "";
-    try {
-        let pdfData;
-        if (pdfModule.PDFParse) {
-             // Class-based API
-             const parser = new pdfModule.PDFParse({ data: buffer });
-             pdfData = await parser.getText();
-        } else if (typeof pdfModule === 'function') {
-             // Function-based API
-             pdfData = await pdfModule(buffer);
-        } else {
-            throw new Error("Unknown pdf-parse module structure");
-        }
-        text = pdfData.text;
-    } catch(parseError: any) {
-        console.error("PDF Parsing failed:", parseError);
-        return NextResponse.json({ error: "Failed to parse PDF: " + parseError.message }, { status: 500 });
-    }
+    // 3. Extract text from PDF using Gemini (serverless compatible)
+    console.log("Extracting PDF text with Gemini...");
+    const text = await extractPdfText(buffer);
 
     return NextResponse.json({ text, hash: hashHex });
 

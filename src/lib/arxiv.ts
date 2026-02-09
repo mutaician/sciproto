@@ -339,10 +339,13 @@ export async function fetchArxivPaper(arxivId: string): Promise<ArxivPaper | nul
 }
 
 /**
- * Fetch PDF content from arXiv and extract text
- * Note: This requires server-side execution with pdf-parse
+ * Fetch PDF content from arXiv and extract text using Gemini
+ * Uses Gemini's native PDF understanding (serverless compatible)
  */
 export async function fetchArxivPdfText(arxivId: string): Promise<string> {
+  // Import here to avoid circular dependency at module load time
+  const { extractPdfText } = await import("./gemini");
+  
   const cleanId = arxivId.replace(/v\d+$/, "");
   const pdfUrl = `https://arxiv.org/pdf/${cleanId}.pdf`;
   
@@ -361,15 +364,11 @@ export async function fetchArxivPdfText(arxivId: string): Promise<string> {
   const arrayBuffer = await response.arrayBuffer();
   const buffer = Buffer.from(arrayBuffer);
   
-  // Dynamic import pdf-parse v2 (server-side only)
-  const { PDFParse } = await import("pdf-parse");
-  const parser = new PDFParse({ data: buffer });
-  const textResult = await parser.getText();
+  // Use Gemini to extract text (serverless compatible)
+  console.log("[arXiv] Extracting text with Gemini...");
+  const text = await extractPdfText(buffer);
   
-  // Clean up resources
-  await parser.destroy();
-  
-  return textResult.text;
+  return text;
 }
 
 /**
