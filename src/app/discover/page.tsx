@@ -109,6 +109,12 @@ export default function DiscoverPage() {
 
   // Handle analyze paper
   const handleAnalyzePaper = useCallback(async (paper: ArxivPaper) => {
+    // Prevent multiple simultaneous analyses
+    if (analyzingPaperId) {
+      alert("Please wait for the current analysis to complete.");
+      return;
+    }
+    
     setAnalyzingPaperId(paper.id);
 
     try {
@@ -143,9 +149,8 @@ export default function DiscoverPage() {
         throw new Error("Failed to analyze paper");
       }
 
-      // Navigate to home page with analysis loaded
-      // The analysis is now cached, so we can redirect to home
-      router.push("/");
+      // Navigate to the paper page to see analysis and choose simulation
+      router.push(`/papers/${hash}`);
       
     } catch (err) {
       console.error("Error analyzing paper:", err);
@@ -153,7 +158,7 @@ export default function DiscoverPage() {
     } finally {
       setAnalyzingPaperId(null);
     }
-  }, [router]);
+  }, [router, analyzingPaperId]);
 
   // Refresh
   const handleRefresh = useCallback(() => {
@@ -357,6 +362,7 @@ export default function DiscoverPage() {
                     paper={paper}
                     onAnalyze={handleAnalyzePaper}
                     isAnalyzing={analyzingPaperId === paper.id}
+                    disabled={analyzingPaperId !== null && analyzingPaperId !== paper.id}
                     variant={index === 0 ? "featured" : "default"}
                   />
                 </motion.div>

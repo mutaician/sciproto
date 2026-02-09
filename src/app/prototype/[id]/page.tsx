@@ -11,11 +11,22 @@ import PrototypeRenderer from "@/components/PrototypeRenderer";
 // TYPES
 // ============================================================================
 
+// A message can have text AND/OR a function call
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   isStreaming?: boolean;
+  // Function call made by assistant
+  functionCall?: {
+    name: string;
+    args: Record<string, unknown>;
+  };
+  // Function response (for user role, providing result of function call)
+  functionResponse?: {
+    name: string;
+    response: Record<string, unknown>;
+  };
 }
 
 type ChatWidth = "narrow" | "normal" | "wide";
@@ -62,10 +73,20 @@ const ChatPanel = memo(function ChatPanel({ messages, isLoading, onSendMessage, 
     onWidthChange(order[nextIdx]);
   };
 
-  // Filter out initial context messages for display
-  const visibleMessages = messages.filter(m => 
-    !(m.role === "user" && (m.content.includes("PAPER CONTENT:") || m.content.startsWith("Create an interactive prototype")))
-  );
+  // Filter out hidden messages for display:
+  // - Initial context messages (paper content, initial prompt)
+  // - Function response messages (internal bookkeeping)
+  const visibleMessages = messages.filter(m => {
+    // Hide initial prompts
+    if (m.role === "user" && (m.content.includes("PAPER CONTENT:") || m.content.startsWith("Create an interactive prototype"))) {
+      return false;
+    }
+    // Hide function response messages (they're for the model, not the user)
+    if (m.functionResponse) {
+      return false;
+    }
+    return true;
+  });
 
   return (
     <div className={`${widthClasses[width]} border-r border-white/10 flex flex-col bg-black/40 shrink-0 transition-all duration-300`}>
@@ -208,6 +229,7 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
   const [paperContext, setPaperContext] = useState("");
   const [chatWidth, setChatWidth] = useState<ChatWidth>("normal");
   const [isSaved, setIsSaved] = useState(true);
+  const [cacheCheckComplete, setCacheCheckComplete] = useState(false);
   const [isLoadedFromCache, setIsLoadedFromCache] = useState(false);
 
   // Refs
@@ -233,13 +255,29 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
             console.log("[Prototype] Loaded from cache:", cached.title);
             setPrototypeCode(cached.code);
             // Convert cached history to messages format
+            // Properly restore function calls and function responses
             if (cached.history && cached.history.length > 0) {
-              const msgs: Message[] = cached.history.map((h: { role: string; parts: { text: string }[] }, i: number) => ({
-                id: `cached-${i}`,
-                role: h.role === "model" ? "assistant" : "user",
-                content: h.parts?.[0]?.text || "",
-                isStreaming: false
-              }));
+              const msgs: Message[] = cached.history.map((h: { 
+                role: string; 
+                parts: Array<{ 
+                  text?: string; 
+                  functionCall?: { name: string; args: Record<string, unknown> };
+                  functionResponse?: { name: string; response: Record<string, unknown> };
+                }>;
+              }, i: number) => {
+                const textPart = h.parts?.find(p => p.text !== undefined);
+                const functionCallPart = h.parts?.find(p => p.functionCall);
+                const functionResponsePart = h.parts?.find(p => p.functionResponse);
+                
+                return {
+                  id: `cached-${i}`,
+                  role: h.role === "model" ? "assistant" : "user",
+                  content: textPart?.text || "",
+                  isStreaming: false,
+                  functionCall: functionCallPart?.functionCall,
+                  functionResponse: functionResponsePart?.functionResponse,
+                } as Message;
+              });
               setMessages(msgs);
             }
             setIsLoadedFromCache(true);
@@ -248,14 +286,18 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
         }
       } catch {
         console.log("[Prototype] Not in cache, will generate new");
+      } finally {
+        // Mark cache check as complete (whether found or not)
+        setCacheCheckComplete(true);
       }
     }
     loadFromCache();
   }, [prototypeId]);
 
   // Auto-save with debounce
+  // Save whenever prototypeCode changes (whether new or from cache)
   useEffect(() => {
-    if (!prototypeCode || isLoadedFromCache === false) return;
+    if (!prototypeCode) return;
     
     setIsSaved(false);
     
@@ -266,10 +308,26 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
     saveTimeoutRef.current = setTimeout(async () => {
       try {
         // Convert messages to history format for storage
-        const historyForStorage = messages.map(m => ({
-          role: m.role === "assistant" ? "model" : "user",
-          parts: [{ text: m.content }]
-        }));
+        // Properly include function calls and function responses
+        const historyForStorage = messages.map(m => {
+          const role = m.role === "assistant" ? "model" : "user";
+          const parts: Array<{ text?: string; functionCall?: unknown; functionResponse?: unknown }> = [];
+          
+          if (m.content) {
+            parts.push({ text: m.content });
+          }
+          if (m.functionCall) {
+            parts.push({ functionCall: m.functionCall });
+          }
+          if (m.functionResponse) {
+            parts.push({ functionResponse: m.functionResponse });
+          }
+          if (parts.length === 0) {
+            parts.push({ text: "" });
+          }
+          
+          return { role, parts };
+        });
         
         await fetch("/api/prototypes", {
           method: "POST",
@@ -293,7 +351,7 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
     return () => {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-  }, [prototypeCode, messages, prototypeId, hash, title, description, isLoadedFromCache]);
+  }, [prototypeCode, messages, prototypeId, hash, title, description]);
 
   // Load paper context
   useEffect(() => {
@@ -306,6 +364,47 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
       })
       .catch(console.error);
   }, [hash]);
+
+  // Convert our Message format to Gemini's expected history format
+  // This properly includes function calls and function responses
+  const buildHistoryForApi = useCallback((msgs: Message[]) => {
+    return msgs.map(m => {
+      const role = m.role === "assistant" ? "model" : "user";
+      const parts: Array<{ text?: string; functionCall?: unknown; functionResponse?: unknown }> = [];
+
+      // Add text part if present
+      if (m.content) {
+        parts.push({ text: m.content });
+      }
+
+      // Add function call part if present (for assistant/model messages)
+      if (m.functionCall) {
+        parts.push({
+          functionCall: {
+            name: m.functionCall.name,
+            args: m.functionCall.args
+          }
+        });
+      }
+
+      // Add function response part if present (for user messages providing function result)
+      if (m.functionResponse) {
+        parts.push({
+          functionResponse: {
+            name: m.functionResponse.name,
+            response: m.functionResponse.response
+          }
+        });
+      }
+
+      // Ensure at least empty text if no parts
+      if (parts.length === 0) {
+        parts.push({ text: "" });
+      }
+
+      return { role, parts };
+    });
+  }, []);
 
   // The main send function
   const sendMessage = useCallback(async (content: string) => {
@@ -321,10 +420,9 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
     setIsLoading(true);
 
     try {
-      const historyForApi = [...messagesRef.current, userMsg].map(m => ({
-        role: m.role === "assistant" ? "model" : "user",
-        parts: [{ text: m.content }]
-      }));
+      // Build history in Gemini's expected format
+      // This properly includes function calls and function responses
+      const historyForApi = buildHistoryForApi([...messagesRef.current, userMsg]);
 
       const res = await fetch("/api/agent", {
         method: "POST",
@@ -337,6 +435,7 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let accumulatedText = "";
+      let receivedFunctionCall: { name: string; args: Record<string, unknown> } | undefined;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -359,7 +458,11 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
             if (json.type === "tool_call" && json.name === "render_prototype") {
               let code = json.args?.code || "";
               code = code.replace(/^```[\w]*\n?/, "").replace(/\n?```$/, "");
-              if (code) setPrototypeCode(code);
+              if (code) {
+                setPrototypeCode(code);
+                // Store the function call so it goes into history
+                receivedFunctionCall = { name: json.name, args: json.args };
+              }
             }
 
             if (json.type === "error") {
@@ -374,9 +477,31 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
         }
       }
 
-      setMessages(prev => prev.map(m =>
-        m.id === assistantMsgId ? { ...m, isStreaming: false } : m
-      ));
+      // Finalize the assistant message with function call if present
+      setMessages(prev => {
+        const updated = prev.map(m =>
+          m.id === assistantMsgId 
+            ? { ...m, isStreaming: false, functionCall: receivedFunctionCall } 
+            : m
+        );
+        
+        // If there was a function call, add a function response message
+        // This tells the model what happened when we executed the function
+        if (receivedFunctionCall) {
+          const functionResponseMsg: Message = {
+            id: crypto.randomUUID(),
+            role: "user", // Function responses are sent as "user" role in Gemini
+            content: "",
+            functionResponse: {
+              name: receivedFunctionCall.name,
+              response: { success: true, rendered: true }
+            }
+          };
+          return [...updated, functionResponseMsg];
+        }
+        
+        return updated;
+      });
 
     } catch (error) {
       console.error("Agent error:", error);
@@ -388,7 +513,7 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [buildHistoryForApi]);
 
   // Handle prototype errors
   const handlePrototypeError = useCallback((error: string) => {
@@ -399,7 +524,12 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
 
   // Auto-start agent when ready (only if not loaded from cache)
   useEffect(() => {
-    if (hasStarted.current || !title || isLoadedFromCache) return;
+    // Wait for cache check to complete before deciding to auto-start
+    if (!cacheCheckComplete) return;
+    
+    // Don't start if already started or loaded from cache
+    if (hasStarted.current || isLoadedFromCache) return;
+    if (!title) return;
     if (hash && !paperContext) return;
     
     hasStarted.current = true;
@@ -408,13 +538,16 @@ export default function PrototypePage({ params }: { params: Promise<{ id: string
       : `Create an interactive prototype for "${title}". Description: ${description}`;
     
     sendMessage(initialPrompt);
-  }, [title, description, hash, paperContext, sendMessage, isLoadedFromCache]);
+  }, [cacheCheckComplete, title, description, hash, paperContext, sendMessage, isLoadedFromCache]);
 
   return (
     <main className="h-screen bg-black text-white flex flex-col overflow-hidden">
       {/* Header */}
       <header className="h-14 border-b border-white/10 flex items-center px-4 gap-4 bg-black/80 backdrop-blur shrink-0">
-        <Link href="/" className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+        <Link 
+          href={hash ? `/papers/${hash}` : "/papers"} 
+          className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+        >
           <ArrowLeft className="w-5 h-5 text-gray-400" />
         </Link>
         <div className="flex-1 min-w-0">

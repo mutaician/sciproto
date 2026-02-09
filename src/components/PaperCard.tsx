@@ -13,6 +13,7 @@ interface PaperCardProps {
   onAnalyze: (paper: ArxivPaper) => void;
   breakthroughScore?: number; // Optional pre-computed score
   isAnalyzing?: boolean;
+  disabled?: boolean; // Disable analyze button (e.g., when another paper is being analyzed)
   variant?: "default" | "compact" | "featured";
 }
 
@@ -41,6 +42,7 @@ export default function PaperCard({
   onAnalyze, 
   breakthroughScore,
   isAnalyzing = false,
+  disabled = false,
   variant = "default" 
 }: PaperCardProps) {
   const categoryColor = getCategoryColor(paper.primaryCategory);
@@ -116,8 +118,8 @@ export default function PaperCard({
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => onAnalyze(paper)}
-              disabled={isAnalyzing}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-500/20 text-blue-400 font-medium text-sm border border-blue-500/30 hover:bg-blue-500/30 disabled:opacity-50 transition-colors"
+              disabled={isAnalyzing || disabled}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-500/20 text-blue-400 font-medium text-sm border border-blue-500/30 hover:bg-blue-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               {isAnalyzing ? (
                 <>
@@ -224,8 +226,8 @@ export default function PaperCard({
           whileHover={{ scale: 1.02 }}
           whileTap={{ scale: 0.98 }}
           onClick={() => onAnalyze(paper)}
-          disabled={isAnalyzing}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-500/10 text-blue-400 font-medium text-sm hover:bg-blue-500/20 disabled:opacity-50 transition-colors"
+          disabled={isAnalyzing || disabled}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-500/10 text-blue-400 font-medium text-sm hover:bg-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           {isAnalyzing ? (
             <>
